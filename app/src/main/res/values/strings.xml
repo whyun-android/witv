@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WiTV</string>
+    <string name="no_source_title">尚未添加播放源</string>
+    <string name="no_source_hint">请在浏览器中访问以下地址添加 M3U 源：</string>
+    <string name="loading">加载中…</string>
+    <string name="all_sources_failed">所有播放源均不可用</string>
+    <string name="switching_source">正在切换播放源…</string>
+    <string name="settings">设置</string>
+    <string name="epg_url">EPG 地址</string>
+    <string name="source_management">播放源管理</string>
+    <string name="current_program">当前播出</string>
+    <string name="next_program">即将播出</string>
+    <string name="no_epg">暂无节目信息</string>
+    <string name="source_count">播放源 %d 个</string>
+    <string name="channel_count">频道 %d 个</string>
+</resources>

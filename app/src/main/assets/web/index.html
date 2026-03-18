@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiTV 管理</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📺 WiTV 管理</h1>
+            <p class="subtitle">Android TV M3U 播放器</p>
+        </header>
+
+        <!-- Add Source -->
+        <section class="card">
+            <h2>添加播放源</h2>
+            <form id="addSourceForm">
+                <div class="form-group">
+                    <label for="sourceName">名称</label>
+                    <input type="text" id="sourceName" placeholder="如：IPTV 直播源">
+                </div>
+                <div class="form-group">
+                    <label for="sourceUrl">M3U 地址 <span class="required">*</span></label>
+                    <input type="url" id="sourceUrl" placeholder="http://example.com/live.m3u" required>
+                </div>
+                <button type="submit" class="btn btn-primary">添加</button>
+            </form>
+        </section>
+
+        <!-- Source List -->
+        <section class="card">
+            <h2>播放源列表</h2>
+            <div id="sourceList" class="source-list">
+                <p class="empty-hint">暂无播放源</p>
+            </div>
+        </section>
+
+        <!-- Channel Preview -->
+        <section class="card" id="channelSection" style="display:none">
+            <h2>频道列表 <span id="channelCount" class="badge"></span></h2>
+            <div id="channelGroups" class="channel-groups"></div>
+        </section>
+
+        <!-- Settings -->
+        <section class="card">
+            <h2>设置</h2>
+            <div class="form-group">
+                <label for="epgUrl">EPG 节目预告地址 (XMLTV)</label>
+                <div class="input-row">
+                    <input type="url" id="epgUrl" placeholder="http://example.com/epg.xml">
+                    <button class="btn btn-secondary" onclick="saveSettings()">保存</button>
+                    <button class="btn btn-secondary" onclick="reloadEpg()">刷新EPG</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

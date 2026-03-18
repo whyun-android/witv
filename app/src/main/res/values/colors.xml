@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#1565C0</color>
+    <color name="primary_dark">#0D47A1</color>
+    <color name="accent">#42A5F5</color>
+    <color name="card_bg">#263238</color>
+    <color name="card_focused">#37474F</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B0BEC5</color>
+    <color name="epg_overlay_bg">#CC000000</color>
+    <color name="channel_list_bg">#E6000000</color>
+    <color name="source_active">#4CAF50</color>
+    <color name="source_error">#F44336</color>
+</resources>
