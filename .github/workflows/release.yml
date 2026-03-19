@@ -38,7 +38,7 @@ jobs:
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Sign app APK
-        uses: r0adkll/sign-android-release@v1
+        uses: ilharp/sign-android-release@v1
         id: sign_app
         with:
           releaseDirectory: app/build/outputs/apk/release
