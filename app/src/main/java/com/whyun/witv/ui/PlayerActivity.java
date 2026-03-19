@@ -187,7 +187,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (currentChannel == null) return;
         executor.execute(() -> {
             channelRepository.toggleFavorite(currentChannelId);
-            isFavorite = !isFavorite;
+            isFavorite = channelRepository.isFavorite(currentChannelId);
             runOnUiThread(() -> {
                 updateFavoriteIcon();
                 String msg = isFavorite ? getString(R.string.added_to_favorites) : getString(R.string.removed_from_favorites);
