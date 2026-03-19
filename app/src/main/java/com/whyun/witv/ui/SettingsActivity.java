@@ -4,6 +4,7 @@ import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -13,6 +14,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.whyun.witv.R;
+import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.entity.M3USource;
 import com.whyun.witv.data.repository.ChannelRepository;
@@ -29,6 +31,7 @@ public class SettingsActivity extends FragmentActivity {
     private AppDatabase db;
     private ChannelRepository channelRepo;
     private EpgRepository epgRepo;
+    private PreferenceManager preferenceManager;
     private SourceListAdapter adapter;
     private EditText epgUrlInput;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -41,10 +44,12 @@ public class SettingsActivity extends FragmentActivity {
         db = AppDatabase.getInstance(this);
         channelRepo = new ChannelRepository(this);
         epgRepo = new EpgRepository(this);
+        preferenceManager = new PreferenceManager(this);
 
         setupWebHint();
         setupSourceList();
         setupSettings();
+        setupAutoPlay();
     }
 
     private void setupWebHint() {
@@ -106,6 +111,17 @@ public class SettingsActivity extends FragmentActivity {
                             Toast.makeText(this, "请先设置 EPG 地址", Toast.LENGTH_SHORT).show());
                 }
             });
+        });
+    }
+
+    private void setupAutoPlay() {
+        CheckBox autoPlayCheck = findViewById(R.id.cb_auto_play_last);
+        autoPlayCheck.setChecked(preferenceManager.isAutoPlayLastEnabled());
+        autoPlayCheck.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            preferenceManager.setAutoPlayLast(isChecked);
+            Toast.makeText(this,
+                    isChecked ? "已开启启动播放上次频道" : "已关闭启动播放上次频道",
+                    Toast.LENGTH_SHORT).show();
         });
     }
 

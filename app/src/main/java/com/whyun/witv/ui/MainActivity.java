@@ -12,14 +12,22 @@ import android.widget.TextView;
 import androidx.fragment.app.FragmentActivity;
 
 import com.whyun.witv.R;
+import com.whyun.witv.data.PreferenceManager;
+import com.whyun.witv.data.db.AppDatabase;
+import com.whyun.witv.data.db.entity.Channel;
 
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends FragmentActivity {
 
     private View emptyState;
     private TextView webAddress;
     private ProgressBar loadingProgress;
+    private PreferenceManager preferenceManager;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private boolean autoPlayAttempted = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -29,8 +37,10 @@ public class MainActivity extends FragmentActivity {
         emptyState = findViewById(R.id.empty_state);
         webAddress = findViewById(R.id.tv_web_address);
         loadingProgress = findViewById(R.id.loading_progress);
+        preferenceManager = new PreferenceManager(this);
 
         updateWebAddress();
+        tryAutoPlayLastChannel();
     }
 
     public void showEmptyState(boolean empty) {
@@ -66,6 +76,30 @@ public class MainActivity extends FragmentActivity {
         return "0.0.0.0";
     }
 
+    private void tryAutoPlayLastChannel() {
+        if (!preferenceManager.isAutoPlayLastEnabled() || !preferenceManager.hasLastChannel()) {
+            return;
+        }
+
+        long channelId = preferenceManager.getLastChannelId();
+        long sourceId = preferenceManager.getLastSourceId();
+
+        if (channelId == -1 || sourceId == -1) return;
+
+        executor.execute(() -> {
+            Channel channel = AppDatabase.getInstance(this).channelDao().getById(channelId);
+            if (channel != null && !autoPlayAttempted) {
+                autoPlayAttempted = true;
+                runOnUiThread(() -> {
+                    Intent intent = new Intent(this, PlayerActivity.class);
+                    intent.putExtra(PlayerActivity.EXTRA_CHANNEL_ID, channelId);
+                    intent.putExtra(PlayerActivity.EXTRA_SOURCE_ID, sourceId);
+                    startActivity(intent);
+                });
+            }
+        });
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_MENU) {
@@ -73,5 +107,11 @@ public class MainActivity extends FragmentActivity {
             return true;
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        executor.shutdown();
     }
 }

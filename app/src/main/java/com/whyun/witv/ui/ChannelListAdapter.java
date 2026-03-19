@@ -13,7 +13,10 @@ import com.bumptech.glide.Glide;
 import com.whyun.witv.R;
 import com.whyun.witv.data.db.entity.Channel;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.VH> {
 
@@ -24,11 +27,20 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
     private final List<Channel> channels;
     private final int selectedIndex;
     private final OnChannelClickListener listener;
+    private Set<Long> favoriteIds = Collections.emptySet();
 
     public ChannelListAdapter(List<Channel> channels, int selectedIndex, OnChannelClickListener listener) {
         this.channels = channels;
         this.selectedIndex = selectedIndex;
         this.listener = listener;
+    }
+
+    public ChannelListAdapter(List<Channel> channels, int selectedIndex,
+                              Set<Long> favoriteIds, OnChannelClickListener listener) {
+        this.channels = channels;
+        this.selectedIndex = selectedIndex;
+        this.listener = listener;
+        this.favoriteIds = favoriteIds != null ? favoriteIds : Collections.emptySet();
     }
 
     @NonNull
@@ -62,6 +74,10 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
             holder.logoView.setImageResource(R.drawable.app_banner);
         }
 
+        if (holder.favoriteView != null) {
+            holder.favoriteView.setVisibility(favoriteIds.contains(channel.id) ? View.VISIBLE : View.GONE);
+        }
+
         holder.itemView.setSelected(position == selectedIndex);
         holder.itemView.setOnClickListener(v -> {
             if (listener != null) listener.onChannelClick(channel);
@@ -78,6 +94,7 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
         TextView epgView;
         TextView numberView;
         ImageView logoView;
+        ImageView favoriteView;
 
         VH(@NonNull View itemView) {
             super(itemView);
@@ -85,6 +102,7 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
             epgView = itemView.findViewById(R.id.channel_epg);
             numberView = itemView.findViewById(R.id.channel_number);
             logoView = itemView.findViewById(R.id.channel_logo);
+            favoriteView = itemView.findViewById(R.id.channel_favorite);
             itemView.setFocusable(true);
             itemView.setFocusableInTouchMode(true);
         }

@@ -1,4 +1,5 @@
 const API = '';
+let favoriteIds = new Set();
 
 document.getElementById('addSourceForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -131,6 +132,10 @@ function renderChannels(data) {
                         <div class="channel-item">
                             ${ch.logoUrl ? `<img src="${escapeHtml(ch.logoUrl)}" alt="" onerror="this.style.display='none'">` : ''}
                             <span>${escapeHtml(ch.displayName)}</span>
+                            <button class="btn-fav ${favoriteIds.has(ch.id) ? 'is-fav' : ''}"
+                                    onclick="toggleFavorite(${ch.id}, this)" title="${favoriteIds.has(ch.id) ? '取消收藏' : '收藏'}">
+                                ${favoriteIds.has(ch.id) ? '★' : '☆'}
+                            </button>
                         </div>
                     `).join('')}
                 </div>
@@ -141,6 +146,61 @@ function renderChannels(data) {
     countBadge.textContent = `共 ${totalChannels} 个频道`;
     container.innerHTML = html;
     section.style.display = 'block';
+}
+
+async function loadFavorites() {
+    try {
+        const res = await fetch(`${API}/api/favorites`);
+        const data = await res.json();
+        favoriteIds = new Set(data.ids || []);
+        renderFavorites(data.channels || []);
+    } catch (err) {
+        console.error('Failed to load favorites:', err);
+    }
+}
+
+function renderFavorites(channels) {
+    const section = document.getElementById('favoriteSection');
+    const container = document.getElementById('favoriteList');
+    const countBadge = document.getElementById('favoriteCount');
+
+    if (!channels || channels.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    countBadge.textContent = `${channels.length} 个`;
+    container.innerHTML = channels.map(ch => `
+        <div class="channel-item">
+            ${ch.logoUrl ? `<img src="${escapeHtml(ch.logoUrl)}" alt="" onerror="this.style.display='none'">` : ''}
+            <span>${escapeHtml(ch.displayName)}</span>
+            <button class="btn-fav is-fav" onclick="toggleFavorite(${ch.id}, this)" title="取消收藏">★</button>
+        </div>
+    `).join('');
+    section.style.display = 'block';
+}
+
+async function toggleFavorite(channelId, btn) {
+    const isFav = favoriteIds.has(channelId);
+    try {
+        if (isFav) {
+            await fetch(`${API}/api/favorites/${channelId}`, { method: 'DELETE' });
+            favoriteIds.delete(channelId);
+            showToast('已取消收藏', 'success');
+        } else {
+            await fetch(`${API}/api/favorites/${channelId}`, { method: 'POST' });
+            favoriteIds.add(channelId);
+            showToast('已添加到收藏', 'success');
+        }
+        if (btn) {
+            btn.className = `btn-fav ${favoriteIds.has(channelId) ? 'is-fav' : ''}`;
+            btn.textContent = favoriteIds.has(channelId) ? '★' : '☆';
+            btn.title = favoriteIds.has(channelId) ? '取消收藏' : '收藏';
+        }
+        loadFavorites();
+    } catch (err) {
+        showToast('操作失败', 'error');
+    }
 }
 
 async function loadSettings() {
@@ -195,5 +255,5 @@ function showToast(msg, type) {
 }
 
 // Initialize
-loadSources();
+loadFavorites().then(() => loadSources());
 loadSettings();

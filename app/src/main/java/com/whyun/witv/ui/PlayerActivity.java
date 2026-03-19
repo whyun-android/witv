@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
 import com.whyun.witv.R;
+import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.entity.Channel;
 import com.whyun.witv.data.db.entity.ChannelSource;
@@ -25,8 +26,10 @@ import com.whyun.witv.player.PlayerManager;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -38,15 +41,19 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private PlayerManager playerManager;
     private ChannelRepository channelRepository;
     private EpgRepository epgRepository;
+    private PreferenceManager preferenceManager;
 
     private View epgOverlay;
     private TextView channelNameView;
     private TextView sourceInfoView;
     private ImageView channelLogoView;
+    private ImageView favoriteIcon;
     private TextView currentProgramView;
     private TextView nextProgramView;
     private TextView switchingToast;
     private RecyclerView channelListOverlay;
+
+    private boolean isFavorite = false;
 
     private long currentChannelId;
     private long sourceId;
@@ -92,6 +99,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         channelNameView = findViewById(R.id.channel_name);
         sourceInfoView = findViewById(R.id.source_info);
         channelLogoView = findViewById(R.id.channel_logo);
+        favoriteIcon = findViewById(R.id.favorite_icon);
         currentProgramView = findViewById(R.id.current_program);
         nextProgramView = findViewById(R.id.next_program);
         switchingToast = findViewById(R.id.switching_toast);
@@ -109,6 +117,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
         channelRepository = new ChannelRepository(this);
         epgRepository = new EpgRepository(this);
+        preferenceManager = new PreferenceManager(this);
     }
 
     private void loadAndPlay() {
@@ -125,6 +134,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             }
 
             if (currentChannel != null) {
+                preferenceManager.saveLastChannel(currentChannelId, sourceId);
+                isFavorite = channelRepository.isFavorite(currentChannelId);
                 List<ChannelSource> sources = channelRepository.getChannelSources(currentChannelId);
                 runOnUiThread(() -> {
                     updateChannelInfo();
@@ -138,8 +149,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private void playChannel(Channel channel) {
         currentChannel = channel;
         currentChannelId = channel.id;
+        preferenceManager.saveLastChannel(channel.id, sourceId);
         executor.execute(() -> {
             List<ChannelSource> sources = channelRepository.getChannelSources(channel.id);
+            isFavorite = channelRepository.isFavorite(channel.id);
             runOnUiThread(() -> {
                 updateChannelInfo();
                 playerManager.playChannel(sources);
@@ -152,6 +165,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (currentChannel == null) return;
 
         channelNameView.setText(currentChannel.displayName);
+        updateFavoriteIcon();
 
         if (currentChannel.logoUrl != null && !currentChannel.logoUrl.isEmpty()) {
             Glide.with(this)
@@ -160,6 +174,28 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         }
 
         loadEpgInfo();
+    }
+
+    private void updateFavoriteIcon() {
+        if (favoriteIcon != null) {
+            favoriteIcon.setImageResource(isFavorite ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite_border);
+            favoriteIcon.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void toggleFavorite() {
+        if (currentChannel == null) return;
+        executor.execute(() -> {
+            channelRepository.toggleFavorite(currentChannelId);
+            isFavorite = !isFavorite;
+            runOnUiThread(() -> {
+                updateFavoriteIcon();
+                String msg = isFavorite ? getString(R.string.added_to_favorites) : getString(R.string.removed_from_favorites);
+                switchingToast.setText(msg);
+                switchingToast.setVisibility(View.VISIBLE);
+                handler.postDelayed(() -> switchingToast.setVisibility(View.GONE), 2000);
+            });
+        });
     }
 
     private void loadEpgInfo() {
@@ -224,23 +260,28 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private void showChannelList() {
         if (allChannels == null || allChannels.isEmpty()) return;
 
-        ChannelListAdapter adapter = new ChannelListAdapter(allChannels, currentChannelIndex, channel -> {
-            channelListOverlay.setVisibility(View.GONE);
-            for (int i = 0; i < allChannels.size(); i++) {
-                if (allChannels.get(i).id == channel.id) {
-                    currentChannelIndex = i;
-                    break;
-                }
-            }
-            playChannel(channel);
-        });
+        executor.execute(() -> {
+            Set<Long> favIds = new HashSet<>(channelRepository.getAllFavoriteChannelIds());
+            runOnUiThread(() -> {
+                ChannelListAdapter adapter = new ChannelListAdapter(allChannels, currentChannelIndex, favIds, channel -> {
+                    channelListOverlay.setVisibility(View.GONE);
+                    for (int i = 0; i < allChannels.size(); i++) {
+                        if (allChannels.get(i).id == channel.id) {
+                            currentChannelIndex = i;
+                            break;
+                        }
+                    }
+                    playChannel(channel);
+                });
 
-        channelListOverlay.setAdapter(adapter);
-        channelListOverlay.setVisibility(View.VISIBLE);
-        channelListOverlay.scrollToPosition(currentChannelIndex);
-        channelListOverlay.post(() -> {
-            RecyclerView.ViewHolder vh = channelListOverlay.findViewHolderForAdapterPosition(currentChannelIndex);
-            if (vh != null) vh.itemView.requestFocus();
+                channelListOverlay.setAdapter(adapter);
+                channelListOverlay.setVisibility(View.VISIBLE);
+                channelListOverlay.scrollToPosition(currentChannelIndex);
+                channelListOverlay.post(() -> {
+                    RecyclerView.ViewHolder vh = channelListOverlay.findViewHolderForAdapterPosition(currentChannelIndex);
+                    if (vh != null) vh.itemView.requestFocus();
+                });
+            });
         });
     }
 
@@ -292,6 +333,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 break;
             case KeyEvent.KEYCODE_MENU:
                 startActivity(new android.content.Intent(this, SettingsActivity.class));
+                return true;
+            case KeyEvent.KEYCODE_BOOKMARK:
+            case KeyEvent.KEYCODE_STAR:
+            case KeyEvent.KEYCODE_F:
+                toggleFavorite();
                 return true;
             default:
                 // Handle number keys (0-9) for direct channel input

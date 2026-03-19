@@ -20,7 +20,9 @@ import com.whyun.witv.data.db.entity.M3USource;
 import com.whyun.witv.data.repository.ChannelRepository;
 import com.whyun.witv.data.repository.EpgRepository;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -76,17 +78,34 @@ public class MainFragment extends BrowseSupportFragment {
             List<String> groups = channelRepository.getGroups(activeSource.id);
             ArrayObjectAdapter newRows = new ArrayObjectAdapter(new ListRowPresenter());
 
+            int headerIndex = 0;
+            Set<Long> favIds = new HashSet<>(channelRepository.getAllFavoriteChannelIds());
+
+            List<Channel> favorites = channelRepository.getFavoriteChannels(activeSource.id);
+            if (!favorites.isEmpty()) {
+                ChannelPresenter favPresenter = new ChannelPresenter();
+                favPresenter.setFavoriteIds(favIds);
+                ArrayObjectAdapter favAdapter = new ArrayObjectAdapter(favPresenter);
+                for (Channel ch : favorites) {
+                    favAdapter.add(ch);
+                }
+                HeaderItem favHeader = new HeaderItem(headerIndex++, getString(R.string.favorites));
+                newRows.add(new ListRow(favHeader, favAdapter));
+            }
+
             for (int i = 0; i < groups.size(); i++) {
                 String group = groups.get(i);
                 String displayGroup = (group == null || group.isEmpty()) ? "其他" : group;
                 List<Channel> channels = channelRepository.getChannelsByGroup(activeSource.id, group);
 
-                ArrayObjectAdapter listRowAdapter = new ArrayObjectAdapter(new ChannelPresenter());
+                ChannelPresenter presenter = new ChannelPresenter();
+                presenter.setFavoriteIds(favIds);
+                ArrayObjectAdapter listRowAdapter = new ArrayObjectAdapter(presenter);
                 for (Channel ch : channels) {
                     listRowAdapter.add(ch);
                 }
 
-                HeaderItem header = new HeaderItem(i, displayGroup);
+                HeaderItem header = new HeaderItem(headerIndex++, displayGroup);
                 newRows.add(new ListRow(header, listRowAdapter));
             }
 
@@ -104,7 +123,8 @@ public class MainFragment extends BrowseSupportFragment {
                     for (int i = 0; i < newRows.size(); i++) {
                         rowsAdapter.add(newRows.get(i));
                     }
-                    ((MainActivity) getActivity()).showEmptyState(groups.isEmpty());
+                    boolean empty = groups.isEmpty() && favorites.isEmpty();
+                    ((MainActivity) getActivity()).showEmptyState(empty);
                 });
             }
         });

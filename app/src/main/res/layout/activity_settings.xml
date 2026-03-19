@@ -97,6 +97,18 @@
             android:text="刷新EPG数据"
             android:textColor="@color/text_primary" />
 
+        <!-- Auto-play last channel -->
+        <CheckBox
+            android:id="@+id/cb_auto_play_last"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/auto_play_last"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:buttonTint="@color/accent"
+            android:checked="true" />
+
         <!-- Info -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -119,7 +131,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:lineSpacingMultiplier="1.4"
-                android:text="• 使用浏览器访问管理地址添加/管理播放源\n• 上/下键：切换频道\n• 左键：显示频道列表\n• 确认键：显示/隐藏信息面板\n• 菜单键：打开设置页面"
+                android:text="• 使用浏览器访问管理地址添加/管理播放源\n• 上/下键：切换频道\n• 左键：显示频道列表\n• 确认键：显示/隐藏信息面板\n• 菜单键：打开设置页面\n• 收藏键/F键：收藏/取消收藏当前频道\n• 启动时自动播放上次观看的频道"
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 

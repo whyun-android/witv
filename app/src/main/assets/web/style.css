@@ -250,6 +250,27 @@ input:focus {
     object-fit: cover;
 }
 
+.btn-fav {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: #546e7a;
+    padding: 2px 6px;
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: color 0.2s, transform 0.2s;
+    line-height: 1;
+}
+
+.btn-fav:hover {
+    transform: scale(1.2);
+}
+
+.btn-fav.is-fav {
+    color: #ffc107;
+}
+
 .toast {
     position: fixed;
     bottom: 24px;

@@ -12,7 +12,16 @@ import com.bumptech.glide.Glide;
 import com.whyun.witv.R;
 import com.whyun.witv.data.db.entity.Channel;
 
+import java.util.Collections;
+import java.util.Set;
+
 public class ChannelPresenter extends Presenter {
+
+    private Set<Long> favoriteIds = Collections.emptySet();
+
+    public void setFavoriteIds(Set<Long> favoriteIds) {
+        this.favoriteIds = favoriteIds != null ? favoriteIds : Collections.emptySet();
+    }
 
     @Override
     public ViewHolder onCreateViewHolder(ViewGroup parent) {
@@ -32,6 +41,7 @@ public class ChannelPresenter extends Presenter {
         TextView epgView = view.findViewById(R.id.channel_epg);
         TextView numberView = view.findViewById(R.id.channel_number);
         ImageView logoView = view.findViewById(R.id.channel_logo);
+        ImageView favoriteView = view.findViewById(R.id.channel_favorite);
 
         nameView.setText(channel.displayName);
         numberView.setText(String.valueOf(channel.sortOrder + 1));
@@ -51,6 +61,10 @@ public class ChannelPresenter extends Presenter {
                     .into(logoView);
         } else {
             logoView.setImageResource(R.drawable.app_banner);
+        }
+
+        if (favoriteView != null) {
+            favoriteView.setVisibility(favoriteIds.contains(channel.id) ? View.VISIBLE : View.GONE);
         }
     }
 

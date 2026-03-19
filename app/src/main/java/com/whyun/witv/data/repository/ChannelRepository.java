@@ -5,9 +5,11 @@ import android.content.Context;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.dao.ChannelDao;
 import com.whyun.witv.data.db.dao.ChannelSourceDao;
+import com.whyun.witv.data.db.dao.FavoriteChannelDao;
 import com.whyun.witv.data.db.dao.M3USourceDao;
 import com.whyun.witv.data.db.entity.Channel;
 import com.whyun.witv.data.db.entity.ChannelSource;
+import com.whyun.witv.data.db.entity.FavoriteChannel;
 import com.whyun.witv.data.db.entity.M3USource;
 import com.whyun.witv.data.parser.M3UParser;
 
@@ -28,6 +30,7 @@ public class ChannelRepository {
     private final ChannelDao channelDao;
     private final ChannelSourceDao channelSourceDao;
     private final M3USourceDao m3uSourceDao;
+    private final FavoriteChannelDao favoriteChannelDao;
     private final OkHttpClient httpClient;
 
     public ChannelRepository(Context context) {
@@ -35,6 +38,7 @@ public class ChannelRepository {
         this.channelDao = db.channelDao();
         this.channelSourceDao = db.channelSourceDao();
         this.m3uSourceDao = db.m3uSourceDao();
+        this.favoriteChannelDao = db.favoriteChannelDao();
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
@@ -119,5 +123,39 @@ public class ChannelRepository {
      */
     public List<ChannelSource> getChannelSources(long channelId) {
         return channelSourceDao.getByChannel(channelId);
+    }
+
+    public boolean isFavorite(long channelId) {
+        return favoriteChannelDao.isFavorite(channelId);
+    }
+
+    public void toggleFavorite(long channelId) {
+        if (favoriteChannelDao.isFavorite(channelId)) {
+            favoriteChannelDao.deleteByChannelId(channelId);
+        } else {
+            favoriteChannelDao.insert(new FavoriteChannel(channelId, System.currentTimeMillis()));
+        }
+    }
+
+    public void addFavorite(long channelId) {
+        if (!favoriteChannelDao.isFavorite(channelId)) {
+            favoriteChannelDao.insert(new FavoriteChannel(channelId, System.currentTimeMillis()));
+        }
+    }
+
+    public void removeFavorite(long channelId) {
+        favoriteChannelDao.deleteByChannelId(channelId);
+    }
+
+    public List<Channel> getFavoriteChannels(long sourceId) {
+        return favoriteChannelDao.getFavoriteChannels(sourceId);
+    }
+
+    public List<Channel> getAllFavoriteChannels() {
+        return favoriteChannelDao.getAllFavoriteChannels();
+    }
+
+    public List<Long> getAllFavoriteChannelIds() {
+        return favoriteChannelDao.getAllFavoriteChannelIds();
     }
 }

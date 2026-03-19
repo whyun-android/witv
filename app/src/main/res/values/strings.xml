@@ -14,4 +14,8 @@
     <string name="no_epg">暂无节目信息</string>
     <string name="source_count">播放源 %d 个</string>
     <string name="channel_count">频道 %d 个</string>
+    <string name="favorites">我的收藏</string>
+    <string name="added_to_favorites">已添加到收藏</string>
+    <string name="removed_from_favorites">已取消收藏</string>
+    <string name="auto_play_last">启动播放上次频道</string>
 </resources>

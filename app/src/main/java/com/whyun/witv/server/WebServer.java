@@ -112,6 +112,19 @@ public class WebServer extends NanoHTTPD {
             return updateSettings(session);
         }
 
+        // --- Favorites API ---
+        if (uri.equals("/api/favorites") && method == Method.GET) {
+            return getFavorites(session);
+        }
+        if (uri.matches("/api/favorites/\\d+") && method == Method.POST) {
+            long channelId = extractId(uri);
+            return addFavorite(channelId);
+        }
+        if (uri.matches("/api/favorites/\\d+") && method == Method.DELETE) {
+            long channelId = extractId(uri);
+            return removeFavorite(channelId);
+        }
+
         // --- EPG API ---
         if (uri.equals("/api/epg/reload") && method == Method.POST) {
             return reloadEpg();
@@ -252,6 +265,36 @@ public class WebServer extends NanoHTTPD {
             db.m3uSourceDao().update(active);
         }
 
+        return jsonOk("{\"success\":true}");
+    }
+
+    // --- Favorite handlers ---
+
+    private Response getFavorites(IHTTPSession session) {
+        String sourceIdParam = session.getParms().get("sourceId");
+        List<Channel> favorites;
+        if (sourceIdParam != null && !sourceIdParam.isEmpty()) {
+            favorites = channelRepo.getFavoriteChannels(Long.parseLong(sourceIdParam));
+        } else {
+            favorites = channelRepo.getAllFavoriteChannels();
+        }
+        JsonObject result = new JsonObject();
+        result.add("channels", gson.toJsonTree(favorites));
+        result.add("ids", gson.toJsonTree(channelRepo.getAllFavoriteChannelIds()));
+        return jsonOk(gson.toJson(result));
+    }
+
+    private Response addFavorite(long channelId) {
+        Channel channel = db.channelDao().getById(channelId);
+        if (channel == null) {
+            return jsonError(Response.Status.NOT_FOUND, "Channel not found");
+        }
+        channelRepo.addFavorite(channelId);
+        return jsonOk("{\"success\":true}");
+    }
+
+    private Response removeFavorite(long channelId) {
+        channelRepo.removeFavorite(channelId);
         return jsonOk("{\"success\":true}");
     }
 
