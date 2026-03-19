@@ -24,6 +24,9 @@ public interface ChannelDao {
     @Query("SELECT * FROM channels WHERE id = :id")
     Channel getById(long id);
 
+    @Query("SELECT * FROM channels WHERE sourceId = :sourceId ORDER BY sortOrder LIMIT 1")
+    Channel getFirstBySource(long sourceId);
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     long insert(Channel channel);
 

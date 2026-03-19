@@ -7,7 +7,7 @@
 
     <fragment
         android:id="@+id/main_browse_fragment"
-        android:name="com.example.witv.ui.MainFragment"
+        android:name="com.whyun.witv.ui.MainFragment"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 

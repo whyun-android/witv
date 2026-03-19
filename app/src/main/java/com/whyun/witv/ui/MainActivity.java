@@ -15,6 +15,7 @@ import com.whyun.witv.R;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.entity.Channel;
+import com.whyun.witv.data.db.entity.M3USource;
 
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -79,23 +80,40 @@ public class MainActivity extends FragmentActivity {
     }
 
     private void tryAutoPlayLastChannel() {
-        if (!preferenceManager.isAutoPlayLastEnabled() || !preferenceManager.hasLastChannel()) {
+        if (!preferenceManager.isAutoPlayLastEnabled()) {
             return;
         }
 
-        long channelId = preferenceManager.getLastChannelId();
-        long sourceId = preferenceManager.getLastSourceId();
-
-        if (channelId == -1 || sourceId == -1) return;
-
         executor.execute(() -> {
-            Channel channel = AppDatabase.getInstance(this).channelDao().getById(channelId);
-            if (channel != null && !autoPlayAttempted) {
+            if (autoPlayAttempted) return;
+
+            AppDatabase db = AppDatabase.getInstance(this);
+            long channelId = preferenceManager.getLastChannelId();
+            long sourceId = preferenceManager.getLastSourceId();
+
+            Channel channel = null;
+            if (channelId != -1 && sourceId != -1) {
+                channel = db.channelDao().getById(channelId);
+            }
+
+            if (channel == null) {
+                M3USource activeSource = db.m3uSourceDao().getActive();
+                if (activeSource != null) {
+                    channel = db.channelDao().getFirstBySource(activeSource.id);
+                    if (channel != null) {
+                        sourceId = activeSource.id;
+                    }
+                }
+            }
+
+            if (channel != null) {
                 autoPlayAttempted = true;
+                final long playChannelId = channel.id;
+                final long playSourceId = sourceId;
                 runOnUiThread(() -> {
                     Intent intent = new Intent(this, PlayerActivity.class);
-                    intent.putExtra(PlayerActivity.EXTRA_CHANNEL_ID, channelId);
-                    intent.putExtra(PlayerActivity.EXTRA_SOURCE_ID, sourceId);
+                    intent.putExtra(PlayerActivity.EXTRA_CHANNEL_ID, playChannelId);
+                    intent.putExtra(PlayerActivity.EXTRA_SOURCE_ID, playSourceId);
                     startActivity(intent);
                 });
             }

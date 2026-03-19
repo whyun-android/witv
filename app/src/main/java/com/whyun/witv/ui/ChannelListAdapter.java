@@ -67,6 +67,7 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
 
         if (channel.logoUrl != null && !channel.logoUrl.isEmpty()) {
             Glide.with(holder.itemView.getContext())
+                    .asBitmap()
                     .load(channel.logoUrl)
                     .placeholder(R.drawable.app_banner)
                     .into(holder.logoView);

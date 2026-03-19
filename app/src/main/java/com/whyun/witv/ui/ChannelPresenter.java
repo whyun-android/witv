@@ -55,6 +55,7 @@ public class ChannelPresenter extends Presenter {
 
         if (channel.logoUrl != null && !channel.logoUrl.isEmpty()) {
             Glide.with(view.getContext())
+                    .asBitmap()
                     .load(channel.logoUrl)
                     .placeholder(R.drawable.app_banner)
                     .error(R.drawable.app_banner)

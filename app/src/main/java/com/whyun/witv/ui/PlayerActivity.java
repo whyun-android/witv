@@ -169,6 +169,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
         if (currentChannel.logoUrl != null && !currentChannel.logoUrl.isEmpty()) {
             Glide.with(this)
+                    .asBitmap()
                     .load(currentChannel.logoUrl)
                     .into(channelLogoView);
         }

@@ -14,8 +14,8 @@ import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
-import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.DefaultLoadControl;
+import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
 import com.whyun.witv.data.db.entity.ChannelSource;
@@ -93,10 +93,10 @@ public class PlayerManager {
 
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                        5000,   // minBufferMs
-                        30000,  // maxBufferMs
-                        1000,   // bufferForPlaybackMs
-                        2000    // bufferForPlaybackAfterRebufferMs
+                        15_000,  // minBufferMs
+                        50_000,  // maxBufferMs
+                        2500,    // bufferForPlaybackMs
+                        5000     // bufferForPlaybackAfterRebufferMs
                 )
                 .build();
 
