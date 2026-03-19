@@ -40,7 +40,9 @@ public class MainActivity extends FragmentActivity {
         preferenceManager = new PreferenceManager(this);
 
         updateWebAddress();
-        tryAutoPlayLastChannel();
+        if (savedInstanceState == null) {
+            tryAutoPlayLastChannel();
+        }
     }
 
     public void showEmptyState(boolean empty) {
