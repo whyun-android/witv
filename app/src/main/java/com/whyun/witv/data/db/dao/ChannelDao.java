@@ -4,6 +4,7 @@ import androidx.room.Dao;
 import androidx.room.Insert;
 import androidx.room.OnConflictStrategy;
 import androidx.room.Query;
+import androidx.room.Update;
 
 import com.whyun.witv.data.db.entity.Channel;
 
@@ -29,6 +30,12 @@ public interface ChannelDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertAll(List<Channel> channels);
 
+    @Update
+    void update(Channel channel);
+
     @Query("DELETE FROM channels WHERE sourceId = :sourceId")
     void deleteBySource(long sourceId);
+
+    @Query("DELETE FROM channels WHERE id IN (:ids)")
+    void deleteByIds(List<Long> ids);
 }

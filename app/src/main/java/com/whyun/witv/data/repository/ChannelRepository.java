@@ -15,7 +15,11 @@ import com.whyun.witv.data.parser.M3UParser;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
@@ -66,25 +70,50 @@ public class ChannelRepository {
 
             long sourceId = source.id;
 
-            // Delete old channel sources first, then channels
-            channelSourceDao.deleteBySource(sourceId);
-            channelDao.deleteBySource(sourceId);
+            // Build map of existing channels keyed by natural key
+            // (tvgId if non-empty, else displayName — same key M3UParser uses for aggregation)
+            List<Channel> existingChannels = channelDao.getBySource(sourceId);
+            Map<String, Channel> existingMap = new LinkedHashMap<>();
+            for (Channel ch : existingChannels) {
+                String key = (ch.tvgId != null && !ch.tvgId.isEmpty()) ? ch.tvgId : ch.displayName;
+                existingMap.put(key, ch);
+            }
 
-            // Insert new channels with incrementing sortOrder
+            // Delete all channel_sources; they will be re-created with fresh URLs
+            channelSourceDao.deleteBySource(sourceId);
+
+            Set<String> matchedKeys = new HashSet<>();
             int sortOrder = 0;
             for (M3UParser.ParsedChannel parsed : result.channels) {
-                Channel channel = new Channel(
-                        sourceId,
-                        parsed.tvgId,
-                        parsed.tvgName,
-                        parsed.displayName,
-                        parsed.logoUrl,
-                        parsed.groupTitle,
-                        sortOrder++
-                );
-                long channelId = channelDao.insert(channel);
+                String key = (parsed.tvgId != null && !parsed.tvgId.isEmpty())
+                        ? parsed.tvgId : parsed.displayName;
 
-                // Insert channel sources (urls) with priority by appearance order
+                Channel existing = existingMap.get(key);
+                long channelId;
+
+                if (existing != null) {
+                    matchedKeys.add(key);
+                    existing.tvgId = parsed.tvgId;
+                    existing.tvgName = parsed.tvgName;
+                    existing.displayName = parsed.displayName;
+                    existing.logoUrl = parsed.logoUrl;
+                    existing.groupTitle = parsed.groupTitle;
+                    existing.sortOrder = sortOrder++;
+                    channelDao.update(existing);
+                    channelId = existing.id;
+                } else {
+                    Channel channel = new Channel(
+                            sourceId,
+                            parsed.tvgId,
+                            parsed.tvgName,
+                            parsed.displayName,
+                            parsed.logoUrl,
+                            parsed.groupTitle,
+                            sortOrder++
+                    );
+                    channelId = channelDao.insert(channel);
+                }
+
                 List<ChannelSource> sources = new ArrayList<>();
                 for (int i = 0; i < parsed.sourceUrls.size(); i++) {
                     sources.add(new ChannelSource(channelId, parsed.sourceUrls.get(i), i));
@@ -92,6 +121,17 @@ public class ChannelRepository {
                 if (!sources.isEmpty()) {
                     channelSourceDao.insertAll(sources);
                 }
+            }
+
+            // Remove channels that no longer exist in the source
+            List<Long> toDelete = new ArrayList<>();
+            for (Map.Entry<String, Channel> entry : existingMap.entrySet()) {
+                if (!matchedKeys.contains(entry.getKey())) {
+                    toDelete.add(entry.getValue().id);
+                }
+            }
+            if (!toDelete.isEmpty()) {
+                channelDao.deleteByIds(toDelete);
             }
 
             // Update source EPG URL if found in parse result
