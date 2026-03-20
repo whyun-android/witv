@@ -95,11 +95,18 @@ async function reloadSource(id) {
 }
 
 async function viewChannels(sourceId) {
+    const section = document.getElementById('channelSection');
+    const container = document.getElementById('channelGroups');
+    const countBadge = document.getElementById('channelCount');
+    section.style.display = 'block';
+    countBadge.textContent = '';
+    container.innerHTML = '<div class="loading-state"><span class="spinner"></span>正在加载频道列表…</div>';
     try {
         const res = await fetch(`${API}/api/sources/${sourceId}/channels`);
         const data = await res.json();
         renderChannels(data);
     } catch (err) {
+        container.innerHTML = '<p class="empty-hint">频道加载失败</p>';
         console.error('Failed to load channels:', err);
     }
 }
@@ -129,11 +136,11 @@ function renderChannels(data) {
                 </div>
                 <div class="group-channels">
                     ${channels.map(ch => `
-                        <div class="channel-item">
+                        <div class="channel-item" onclick="showEpg(${ch.id}, '${escapeHtml(ch.displayName).replace(/'/g, "\\'")}')">
                             ${ch.logoUrl ? `<img src="${escapeHtml(ch.logoUrl)}" alt="" onerror="this.style.display='none'">` : ''}
                             <span>${escapeHtml(ch.displayName)}</span>
                             <button class="btn-fav ${favoriteIds.has(ch.id) ? 'is-fav' : ''}"
-                                    onclick="toggleFavorite(${ch.id}, this)" title="${favoriteIds.has(ch.id) ? '取消收藏' : '收藏'}">
+                                    onclick="event.stopPropagation();toggleFavorite(${ch.id}, this)" title="${favoriteIds.has(ch.id) ? '取消收藏' : '收藏'}">
                                 ${favoriteIds.has(ch.id) ? '★' : '☆'}
                             </button>
                         </div>
@@ -254,6 +261,82 @@ function showToast(msg, type) {
     setTimeout(() => { toast.className = 'toast'; }, 3000);
 }
 
+async function loadVersion() {
+    try {
+        const res = await fetch(`${API}/api/version`);
+        const data = await res.json();
+        document.getElementById('appVersion').textContent = 'v' + (data.version || '');
+    } catch (err) {
+        console.error('Failed to load version:', err);
+    }
+}
+
+const EPG_LIST_LIMIT = 48;
+
+async function showEpg(channelId, channelName) {
+    const modal = document.getElementById('epgModal');
+    const title = document.getElementById('epgModalTitle');
+    const body = document.getElementById('epgModalBody');
+
+    title.textContent = channelName;
+    body.innerHTML = '<div class="loading-state"><span class="spinner"></span>正在加载节目信息…</div>';
+    modal.classList.add('show');
+
+    try {
+        const res = await fetch(`${API}/api/epg/channel/${channelId}?limit=${EPG_LIST_LIMIT}`);
+        const data = await res.json();
+        const programs = data.programs || [];
+        if (programs.length === 0) {
+            body.innerHTML = '<p class="epg-empty">暂无节目信息</p>';
+            return;
+        }
+        const fmt = ts => {
+            const d = new Date(ts);
+            return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+        };
+        const now = Date.now();
+        const curIdx = programs.findIndex(p => p.startTime <= now && p.endTime > now);
+        const nextIdx = curIdx === -1 ? 0 : curIdx + 1;
+
+        function epgLabel(i) {
+            if (i === curIdx) return '当前播出';
+            if (i === nextIdx) return '即将播出';
+            return '后续';
+        }
+
+        const rows = programs.map((p, i) => {
+            const isCurrent = i === curIdx;
+            const desc = p.description && String(p.description).trim();
+            return `
+            <div class="epg-item ${isCurrent ? 'epg-current' : ''}">
+                <span class="epg-label">${epgLabel(i)}</span>
+                <span class="epg-title">${escapeHtml(p.title)}</span>
+                <span class="epg-time">${fmt(p.startTime)} - ${fmt(p.endTime)}</span>
+                ${desc ? `<p class="epg-desc">${escapeHtml(desc)}</p>` : ''}
+            </div>`;
+        }).join('');
+
+        const cap = data.limit != null ? data.limit : EPG_LIST_LIMIT;
+        let footerText;
+        if (programs.length >= cap) {
+            footerText = `已显示 ${cap} 条未结束节目（已达本页上限，数据库中可能还有更多）`;
+        } else {
+            footerText = `共 ${programs.length} 条未结束节目`;
+        }
+        const footer = `<p class="epg-footer">${footerText}</p>`;
+
+        body.innerHTML = rows + footer;
+    } catch (err) {
+        body.innerHTML = '<p class="epg-empty">节目信息加载失败</p>';
+    }
+}
+
+function closeEpgModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('epgModal').classList.remove('show');
+}
+
 // Initialize
+loadVersion();
 loadFavorites().then(() => loadSources());
 loadSettings();

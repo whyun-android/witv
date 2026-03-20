@@ -50,6 +50,7 @@ public class SettingsActivity extends FragmentActivity {
         setupSourceList();
         setupSettings();
         setupAutoPlay();
+        setupShowLoadSpeed();
     }
 
     private void setupWebHint() {
@@ -99,6 +100,7 @@ public class SettingsActivity extends FragmentActivity {
                             Toast.makeText(this, "正在刷新 EPG…", Toast.LENGTH_SHORT).show());
                     try {
                         epgRepo.loadEpg(active.epgUrl);
+                        preferenceManager.markEpgAutoRefreshSuccess(active.epgUrl);
                         runOnUiThread(() ->
                                 Toast.makeText(this, "EPG 刷新完成", Toast.LENGTH_SHORT).show());
                     } catch (Exception e) {
@@ -121,6 +123,17 @@ public class SettingsActivity extends FragmentActivity {
             preferenceManager.setAutoPlayLast(isChecked);
             Toast.makeText(this,
                     isChecked ? "已开启启动播放上次频道" : "已关闭启动播放上次频道",
+                    Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    private void setupShowLoadSpeed() {
+        CheckBox cb = findViewById(R.id.cb_show_load_speed);
+        cb.setChecked(preferenceManager.isShowLoadSpeedOverlay());
+        cb.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            preferenceManager.setShowLoadSpeedOverlay(isChecked);
+            Toast.makeText(this,
+                    isChecked ? "已开启播放页加载速度显示" : "已关闭播放页加载速度显示",
                     Toast.LENGTH_SHORT).show();
         });
     }

@@ -9,12 +9,17 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.fragment.app.FragmentActivity;
+import androidx.media3.common.Player;
+import androidx.media3.common.Tracks;
+import androidx.media3.common.VideoSize;
+import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
 import com.whyun.witv.R;
+import com.whyun.witv.WiTVApp;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.entity.Channel;
@@ -50,7 +55,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private ImageView favoriteIcon;
     private TextView currentProgramView;
     private TextView nextProgramView;
+    private TextView mediaInfoVideoColumn;
+    private TextView mediaInfoAudioColumn;
     private TextView switchingToast;
+    private TextView loadSpeedOverlay;
     private RecyclerView channelListOverlay;
 
     private boolean isFavorite = false;
@@ -67,6 +75,33 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private boolean overlayVisible = false;
     private final Runnable hideOverlayRunnable = () -> hideOverlay();
+
+    private final Runnable loadSpeedRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            updateLoadSpeedOverlayText();
+            if (preferenceManager != null && preferenceManager.isShowLoadSpeedOverlay()) {
+                handler.postDelayed(this, 500);
+            }
+        }
+    };
+
+    private final Player.Listener mediaInfoListener = new Player.Listener() {
+        @Override
+        public void onTracksChanged(Tracks tracks) {
+            postUpdateMediaInfo();
+        }
+
+        @Override
+        public void onVideoSizeChanged(VideoSize videoSize) {
+            postUpdateMediaInfo();
+        }
+
+        @Override
+        public void onPlaybackStateChanged(int playbackState) {
+            postUpdateLoadSpeedOverlay();
+        }
+    };
 
     // Number input for direct channel switching
     private StringBuilder numberInput = new StringBuilder();
@@ -91,6 +126,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
         initViews();
         initPlayer();
+        applyLoadSpeedOverlayPreference();
         loadAndPlay();
     }
 
@@ -102,7 +138,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         favoriteIcon = findViewById(R.id.favorite_icon);
         currentProgramView = findViewById(R.id.current_program);
         nextProgramView = findViewById(R.id.next_program);
+        mediaInfoVideoColumn = findViewById(R.id.media_info_video_column);
+        mediaInfoAudioColumn = findViewById(R.id.media_info_audio_column);
         switchingToast = findViewById(R.id.switching_toast);
+        loadSpeedOverlay = findViewById(R.id.load_speed_overlay);
         channelListOverlay = findViewById(R.id.channel_list_overlay);
         channelListOverlay.setLayoutManager(new LinearLayoutManager(this));
     }
@@ -118,6 +157,101 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         channelRepository = new ChannelRepository(this);
         epgRepository = new EpgRepository(this);
         preferenceManager = new PreferenceManager(this);
+
+        ExoPlayer exo = playerManager.getPlayer();
+        if (exo != null) {
+            exo.addListener(mediaInfoListener);
+        }
+        WiTVApp.getInstance().setActivePlayerManager(playerManager);
+    }
+
+    private void postUpdateLoadSpeedOverlay() {
+        runOnUiThread(this::updateLoadSpeedOverlayText);
+    }
+
+    /** 根据设置显示/隐藏右上角加载速度，并刷新文案 */
+    private void applyLoadSpeedOverlayPreference() {
+        if (loadSpeedOverlay == null || preferenceManager == null) {
+            return;
+        }
+        boolean show = preferenceManager.isShowLoadSpeedOverlay();
+        loadSpeedOverlay.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show) {
+            updateLoadSpeedOverlayText();
+        }
+    }
+
+    private void updateLoadSpeedOverlayText() {
+        if (loadSpeedOverlay == null || preferenceManager == null
+                || !preferenceManager.isShowLoadSpeedOverlay()) {
+            return;
+        }
+        ExoPlayer exo = playerManager != null ? playerManager.getPlayer() : null;
+        if (exo == null) {
+            loadSpeedOverlay.setText("—");
+            return;
+        }
+        int state = exo.getPlaybackState();
+        if (state == Player.STATE_IDLE || state == Player.STATE_ENDED) {
+            loadSpeedOverlay.setText(getString(R.string.load_speed_overlay_idle));
+            return;
+        }
+        long bps = WiTVApp.getInstance().getPlaybackBitrateEstimate();
+        if (bps <= 0) {
+            loadSpeedOverlay.setText(getString(R.string.load_speed_overlay_collecting));
+            return;
+        }
+        loadSpeedOverlay.setText(formatBitsPerSecond(bps));
+    }
+
+    private static String formatBitsPerSecond(long bps) {
+        if (bps <= 0) {
+            return "—";
+        }
+        if (bps >= 1_000_000) {
+            return String.format(Locale.US, "%.2f Mbps", bps / 1_000_000.0);
+        }
+        if (bps >= 1_000) {
+            return String.format(Locale.US, "%d kbps", bps / 1000);
+        }
+        return bps + " bps";
+    }
+
+    private void startLoadSpeedRefreshIfNeeded() {
+        handler.removeCallbacks(loadSpeedRefreshRunnable);
+        if (preferenceManager != null && preferenceManager.isShowLoadSpeedOverlay()) {
+            handler.post(loadSpeedRefreshRunnable);
+        }
+    }
+
+    private void postUpdateMediaInfo() {
+        runOnUiThread(this::updateMediaInfoText);
+    }
+
+    private void updateMediaInfoText() {
+        if (mediaInfoVideoColumn == null || mediaInfoAudioColumn == null) {
+            return;
+        }
+        ExoPlayer exo = playerManager.getPlayer();
+        String waiting = getString(R.string.media_info_waiting);
+        MediaInfoFormatter.MediaInfoColumns cols = MediaInfoFormatter.buildTwoColumns(exo,
+                getString(R.string.media_info_resolution),
+                getString(R.string.media_info_video_codec),
+                getString(R.string.media_info_video_bitrate),
+                getString(R.string.media_info_frame_rate),
+                getString(R.string.media_info_audio_codec),
+                getString(R.string.media_info_audio_bitrate),
+                getString(R.string.media_info_sample_rate),
+                getString(R.string.media_info_channels),
+                waiting,
+                getString(R.string.media_info_not_provided));
+        if (cols.videoColumn.isEmpty() && cols.audioColumn.isEmpty()) {
+            mediaInfoVideoColumn.setText("");
+            mediaInfoAudioColumn.setText("");
+            return;
+        }
+        mediaInfoVideoColumn.setText(cols.videoColumn);
+        mediaInfoAudioColumn.setText(cols.audioColumn);
     }
 
     private void loadAndPlay() {
@@ -139,6 +273,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 List<ChannelSource> sources = channelRepository.getChannelSources(currentChannelId);
                 runOnUiThread(() -> {
                     updateChannelInfo();
+                    dismissAllSourcesFailedToast();
                     playerManager.playChannel(sources);
                     showOverlayTemporarily();
                 });
@@ -155,10 +290,16 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             isFavorite = channelRepository.isFavorite(channel.id);
             runOnUiThread(() -> {
                 updateChannelInfo();
+                dismissAllSourcesFailedToast();
                 playerManager.playChannel(sources);
                 showOverlayTemporarily();
             });
         });
+    }
+
+    /** 用户切换频道或重新发起播放时关闭「所有源失败」等常驻提示；成功开播时仍由 onPlaybackStarted 处理。 */
+    private void dismissAllSourcesFailedToast() {
+        switchingToast.setVisibility(View.GONE);
     }
 
     private void updateChannelInfo() {
@@ -246,6 +387,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private void showOverlayTemporarily() {
         epgOverlay.setVisibility(View.VISIBLE);
         overlayVisible = true;
+        updateMediaInfoText();
         handler.removeCallbacks(hideOverlayRunnable);
         handler.postDelayed(hideOverlayRunnable, 5000);
     }
@@ -341,6 +483,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 }
                 break;
             case KeyEvent.KEYCODE_INFO:
+            case KeyEvent.KEYCODE_SPACE:
                 if (overlayVisible) {
                     hideOverlay();
                 } else {
@@ -348,6 +491,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 }
                 return true;
             case KeyEvent.KEYCODE_MENU:
+            case KeyEvent.KEYCODE_F6:
                 startActivity(new android.content.Intent(this, SettingsActivity.class));
                 return true;
             case KeyEvent.KEYCODE_BOOKMARK:
@@ -384,7 +528,6 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     public void onAllSourcesFailed() {
         switchingToast.setText(getString(R.string.all_sources_failed));
         switchingToast.setVisibility(View.VISIBLE);
-        handler.postDelayed(() -> switchingToast.setVisibility(View.GONE), 3000);
     }
 
     @Override
@@ -392,6 +535,9 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         switchingToast.setVisibility(View.GONE);
         sourceInfoView.setText(String.format(Locale.getDefault(),
                 getString(R.string.source_count) + " (当前: %d)", total, sourceIndex + 1));
+        preferenceManager.saveLastPlayStreamIndex(sourceIndex);
+        updateMediaInfoText();
+        updateLoadSpeedOverlayText();
     }
 
     @Override
@@ -404,6 +550,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     @Override
     protected void onPause() {
         super.onPause();
+        handler.removeCallbacks(loadSpeedRefreshRunnable);
         playerManager.pause();
     }
 
@@ -411,12 +558,19 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     protected void onResume() {
         super.onResume();
         playerManager.resume();
+        applyLoadSpeedOverlayPreference();
+        startLoadSpeedRefreshIfNeeded();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         handler.removeCallbacksAndMessages(null);
+        ExoPlayer exo = playerManager.getPlayer();
+        if (exo != null) {
+            exo.removeListener(mediaInfoListener);
+        }
+        WiTVApp.getInstance().setActivePlayerManager(null);
         playerManager.release();
         executor.shutdown();
     }

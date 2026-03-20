@@ -111,6 +111,32 @@ public class EpgRepository {
     }
 
     /**
+     * Gets up to {@code limit} upcoming programs for a channel (same matching rules as {@link #getCurrentAndNext}).
+     */
+    public List<EpgProgram> getUpcomingPrograms(String tvgId, String tvgName, int limit) {
+        if (limit < 1) {
+            limit = 1;
+        }
+        long now = System.currentTimeMillis();
+
+        if (tvgId != null && !tvgId.isEmpty()) {
+            List<EpgProgram> programs = epgDao.getUpcomingPrograms(tvgId, now, limit);
+            if (!programs.isEmpty()) {
+                return programs;
+            }
+        }
+
+        if (tvgName != null && !tvgName.isEmpty()) {
+            String mappedId = epgChannelDao.findChannelIdByDisplayName(tvgName);
+            if (mappedId != null && !mappedId.isEmpty()) {
+                return epgDao.getUpcomingPrograms(mappedId, now, limit);
+            }
+        }
+
+        return new ArrayList<>();
+    }
+
+    /**
      * Deletes EPG programs that have already ended.
      */
     public void cleanOldPrograms() {

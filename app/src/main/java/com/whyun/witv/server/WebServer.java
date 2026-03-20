@@ -3,17 +3,21 @@ package com.whyun.witv.server;
 import android.content.Context;
 import android.content.res.AssetManager;
 
+import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.entity.Channel;
+import com.whyun.witv.data.db.entity.EpgProgram;
 import com.whyun.witv.data.db.entity.M3USource;
 import com.whyun.witv.data.repository.ChannelRepository;
 import com.whyun.witv.data.repository.EpgRepository;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -129,6 +133,15 @@ public class WebServer extends NanoHTTPD {
         if (uri.equals("/api/epg/reload") && method == Method.POST) {
             return reloadEpg();
         }
+        if (uri.matches("/api/epg/channel/\\d+") && method == Method.GET) {
+            long channelId = extractId(uri);
+            return getChannelEpg(channelId, session);
+        }
+
+        // --- Version API ---
+        if (uri.equals("/api/version") && method == Method.GET) {
+            return getVersion();
+        }
 
         return jsonError(Response.Status.NOT_FOUND, "API not found: " + uri);
     }
@@ -173,6 +186,7 @@ public class WebServer extends NanoHTTPD {
                 M3USource updated = db.m3uSourceDao().getById(id);
                 if (updated != null && updated.epgUrl != null && !updated.epgUrl.isEmpty()) {
                     epgRepo.loadEpg(updated.epgUrl);
+                    new PreferenceManager(context).markEpgAutoRefreshSuccess(updated.epgUrl);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -306,15 +320,63 @@ public class WebServer extends NanoHTTPD {
             return jsonError(Response.Status.BAD_REQUEST, "No EPG URL configured");
         }
 
+        final String epgUrl = active.epgUrl;
         new Thread(() -> {
             try {
-                epgRepo.loadEpg(active.epgUrl);
+                epgRepo.loadEpg(epgUrl);
+                new PreferenceManager(context).markEpgAutoRefreshSuccess(epgUrl);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }).start();
 
         return jsonOk("{\"success\":true,\"message\":\"EPG reloading in background\"}");
+    }
+
+    // --- Channel EPG handler ---
+
+    private static final int EPG_WEB_DEFAULT_LIMIT = 24;
+    private static final int EPG_WEB_MAX_LIMIT = 100;
+
+    private Response getChannelEpg(long channelId, IHTTPSession session) {
+        Channel channel = db.channelDao().getById(channelId);
+        if (channel == null) {
+            return jsonError(Response.Status.NOT_FOUND, "Channel not found");
+        }
+        int limit = EPG_WEB_DEFAULT_LIMIT;
+        String limitParam = session.getParms().get("limit");
+        if (limitParam != null && !limitParam.isEmpty()) {
+            try {
+                limit = Integer.parseInt(limitParam.trim());
+            } catch (NumberFormatException ignored) {
+                limit = EPG_WEB_DEFAULT_LIMIT;
+            }
+        }
+        if (limit < 1) {
+            limit = 1;
+        }
+        if (limit > EPG_WEB_MAX_LIMIT) {
+            limit = EPG_WEB_MAX_LIMIT;
+        }
+        List<EpgProgram> programs = epgRepo.getUpcomingPrograms(channel.tvgId, channel.tvgName, limit);
+        JsonObject result = new JsonObject();
+        result.addProperty("limit", limit);
+        result.add("programs", gson.toJsonTree(programs));
+        return jsonOk(gson.toJson(result));
+    }
+
+    // --- Version handler ---
+
+    private Response getVersion() {
+        JsonObject result = new JsonObject();
+        try {
+            String versionName = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0).versionName;
+            result.addProperty("version", versionName);
+        } catch (Exception e) {
+            result.addProperty("version", "unknown");
+        }
+        return jsonOk(gson.toJson(result));
     }
 
     // --- Static file serving ---
@@ -336,7 +398,12 @@ public class WebServer extends NanoHTTPD {
             if (dot >= 0) ext = assetPath.substring(dot + 1);
 
             String mime = MIME_MAP.getOrDefault(ext, "application/octet-stream");
-            return newFixedLengthResponse(Response.Status.OK, mime, new String(data, "UTF-8"));
+            if (isBinaryAssetExt(ext)) {
+                return newFixedLengthResponse(Response.Status.OK, mime,
+                        new ByteArrayInputStream(data), data.length);
+            }
+            return newFixedLengthResponse(Response.Status.OK, mime,
+                    new String(data, StandardCharsets.UTF_8));
         } catch (IOException e) {
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found");
         }
@@ -364,6 +431,23 @@ public class WebServer extends NanoHTTPD {
         }
         String postData = body.get("postData");
         return postData != null ? postData : "";
+    }
+
+    private static boolean isBinaryAssetExt(String ext) {
+        if (ext == null) {
+            return false;
+        }
+        switch (ext.toLowerCase()) {
+            case "png":
+            case "ico":
+            case "jpg":
+            case "jpeg":
+            case "gif":
+            case "webp":
+                return true;
+            default:
+                return false;
+        }
     }
 
     private byte[] readStream(InputStream is) throws IOException {

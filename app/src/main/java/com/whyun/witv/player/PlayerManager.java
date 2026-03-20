@@ -8,16 +8,17 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
-import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
+import com.whyun.witv.WiTVApp;
 import com.whyun.witv.data.db.entity.ChannelSource;
 
 import java.util.ArrayList;
@@ -45,18 +46,46 @@ public class PlayerManager {
     private List<ChannelSource> currentSources = new ArrayList<>();
     private int currentSourceIndex = 0;
     private boolean isRetrying = false;
+    private int playGeneration = 0;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable timeoutRunnable = () -> {
-        if (player != null && !player.isPlaying()) {
-            Log.w(TAG, "Source timeout, switching to next");
-            switchToNextSource();
+    private Runnable timeoutRunnable;
+
+    private Runnable createTimeoutRunnable(int generation) {
+        return () -> {
+            if (generation != playGeneration) return;
+            if (player != null && !player.isPlaying()) {
+                int state = player.getPlaybackState();
+                String stateName = playbackStateName(state);
+                switchToNextSource(String.format(Locale.US,
+                        "source_timeout: %d ms without playing (playbackState=%s, playWhenReady=%s)",
+                        SOURCE_TIMEOUT_MS, stateName, player.getPlayWhenReady()));
+            }
+        };
+    }
+
+    private static String playbackStateName(int state) {
+        switch (state) {
+            case Player.STATE_IDLE:
+                return "IDLE";
+            case Player.STATE_BUFFERING:
+                return "BUFFERING";
+            case Player.STATE_READY:
+                return "READY";
+            case Player.STATE_ENDED:
+                return "ENDED";
+            default:
+                return String.valueOf(state);
         }
-    };
+    }
 
     private final Player.Listener playerListener = new Player.Listener() {
         @Override
         public void onPlaybackStateChanged(int playbackState) {
+            if (player == null || player.getPlaybackState() != playbackState) {
+                Log.w(TAG, "Ignoring stale state callback");
+                return;
+            }
             if (playbackState == Player.STATE_READY) {
                 cancelTimeout();
                 isRetrying = false;
@@ -73,13 +102,26 @@ public class PlayerManager {
 
         @Override
         public void onPlayerError(@NonNull PlaybackException error) {
+            if (player == null || player.getPlayerError() != error) {
+                Log.w(TAG, "Ignoring stale error callback from previous channel");
+                return;
+            }
             cancelTimeout();
             String url = currentSourceIndex < currentSources.size()
                     ? currentSources.get(currentSourceIndex).url : "unknown";
             Log.e(TAG, String.format(Locale.US,
                     "Playback error on source %d/%d [%s]: %s",
                     currentSourceIndex + 1, currentSources.size(), url, error.getMessage()));
-            switchToNextSource();
+            String reason = String.format(Locale.US,
+                    "playback_error: %s | %s",
+                    error.getErrorCodeName(),
+                    error.getMessage() != null ? error.getMessage() : "(no message)");
+            Throwable cause = error.getCause();
+            if (cause != null) {
+                reason += " | cause: " + cause.getClass().getSimpleName()
+                        + (cause.getMessage() != null ? ": " + cause.getMessage() : "");
+            }
+            switchToNextSource(reason);
         }
     };
 
@@ -100,8 +142,10 @@ public class PlayerManager {
                 )
                 .build();
 
+        DefaultBandwidthMeter bandwidthMeter = WiTVApp.getInstance().getOrCreateBandwidthMeter();
         player = new ExoPlayer.Builder(context)
                 .setLoadControl(loadControl)
+                .setBandwidthMeter(bandwidthMeter)
                 .build();
 
         playerView.setPlayer(player);
@@ -113,6 +157,10 @@ public class PlayerManager {
     }
 
     public void playChannel(List<ChannelSource> sources) {
+        playGeneration++;
+        cancelTimeout();
+        stopPlayer();
+
         if (sources == null || sources.isEmpty()) {
             Log.w(TAG, "No sources available for channel");
             if (callback != null) callback.onAllSourcesFailed();
@@ -128,6 +176,7 @@ public class PlayerManager {
     private void playCurrentSource() {
         if (currentSourceIndex >= currentSources.size()) {
             isRetrying = false;
+            stopPlayer();
             Log.e(TAG, "All sources failed");
             if (callback != null) callback.onAllSourcesFailed();
             return;
@@ -170,14 +219,37 @@ public class PlayerManager {
         return builder.build();
     }
 
-    private void switchToNextSource() {
+    /**
+     * 放弃当前源并尝试下一个。调用前须已确定需要换源（错误、超时等）。
+     *
+     * @param reason 换源原因，写入日志便于排查
+     */
+    private void switchToNextSource(@NonNull String reason) {
+        int failedIndex = currentSourceIndex;
+        String failedUrl = failedIndex >= 0 && failedIndex < currentSources.size()
+                ? currentSources.get(failedIndex).url
+                : "unknown";
+        Log.w(TAG, String.format(Locale.US,
+                "Switching source — reason: %s | failedSource: %d/%d | url: %s",
+                reason, failedIndex + 1, currentSources.size(), failedUrl));
         isRetrying = true;
         currentSourceIndex++;
         playCurrentSource();
     }
 
+    private void stopPlayer() {
+        if (player != null) {
+            player.stop();
+            player.clearMediaItems();
+        }
+    }
+
     public void manualSwitchSource(int index) {
         if (index >= 0 && index < currentSources.size()) {
+            String url = currentSources.get(index).url;
+            Log.i(TAG, String.format(Locale.US,
+                    "Manual switch source — target: %d/%d | url: %s",
+                    index + 1, currentSources.size(), url));
             currentSourceIndex = index;
             isRetrying = false;
             playCurrentSource();
@@ -186,11 +258,14 @@ public class PlayerManager {
 
     private void startTimeout() {
         cancelTimeout();
+        timeoutRunnable = createTimeoutRunnable(playGeneration);
         handler.postDelayed(timeoutRunnable, SOURCE_TIMEOUT_MS);
     }
 
     private void cancelTimeout() {
-        handler.removeCallbacks(timeoutRunnable);
+        if (timeoutRunnable != null) {
+            handler.removeCallbacks(timeoutRunnable);
+        }
     }
 
     public ExoPlayer getPlayer() {

@@ -2,6 +2,7 @@ package com.whyun.witv.ui;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 
 import androidx.leanback.app.BrowseSupportFragment;
 import androidx.leanback.widget.ArrayObjectAdapter;
@@ -14,6 +15,7 @@ import androidx.leanback.widget.Row;
 import androidx.leanback.widget.RowPresenter;
 
 import com.whyun.witv.R;
+import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.entity.Channel;
 import com.whyun.witv.data.db.entity.M3USource;
@@ -28,16 +30,26 @@ import java.util.concurrent.Executors;
 
 public class MainFragment extends BrowseSupportFragment {
 
+    private static final String TAG = "MainFragment";
+
     private ArrayObjectAdapter rowsAdapter;
     private ChannelRepository channelRepository;
     private EpgRepository epgRepository;
+    private PreferenceManager preferenceManager;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    /** Serializes background EPG downloads so rapid onResume does not pile up parallel requests */
+    private final ExecutorService epgRefreshExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "WiTV-EpgRefresh");
+        t.setPriority(Thread.NORM_PRIORITY - 1);
+        return t;
+    });
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         channelRepository = new ChannelRepository(requireContext());
         epgRepository = new EpgRepository(requireContext());
+        preferenceManager = new PreferenceManager(requireContext());
         setupUI();
         setOnItemViewClickedListener(new ItemClickListener());
     }
@@ -109,11 +121,22 @@ public class MainFragment extends BrowseSupportFragment {
                 newRows.add(new ListRow(header, listRowAdapter));
             }
 
-            // Auto-load EPG in background
+            // Clean ended programs quickly; full EPG fetch runs on separate executor (non-blocking)
             if (activeSource.epgUrl != null && !activeSource.epgUrl.isEmpty()) {
                 try {
                     epgRepository.cleanOldPrograms();
                 } catch (Exception ignored) {
+                }
+                final String epgUrl = activeSource.epgUrl;
+                if (preferenceManager.shouldAutoRefreshEpg(epgUrl, PreferenceManager.EPG_AUTO_REFRESH_INTERVAL_MS)) {
+                    epgRefreshExecutor.execute(() -> {
+                        try {
+                            epgRepository.loadEpg(epgUrl);
+                            preferenceManager.markEpgAutoRefreshSuccess(epgUrl);
+                        } catch (Exception e) {
+                            Log.w(TAG, "Background EPG refresh failed", e);
+                        }
+                    });
                 }
             }
 
@@ -128,6 +151,13 @@ public class MainFragment extends BrowseSupportFragment {
                 });
             }
         });
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        executor.shutdown();
+        epgRefreshExecutor.shutdown();
     }
 
     private class ItemClickListener implements OnItemViewClickedListener {

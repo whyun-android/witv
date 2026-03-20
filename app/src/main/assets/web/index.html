@@ -4,13 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WiTV 管理</title>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <header>
             <h1>📺 WiTV 管理</h1>
-            <p class="subtitle">Android TV M3U 播放器</p>
+            <p class="subtitle">Android TV M3U 播放器 <span id="appVersion"></span></p>
         </header>
 
         <!-- Add Source -->
@@ -64,6 +65,16 @@
     </div>
 
     <div id="toast" class="toast"></div>
+
+    <div id="epgModal" class="modal-overlay" onclick="closeEpgModal(event)">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="epgModalTitle"></h3>
+                <button class="modal-close" onclick="closeEpgModal()">&times;</button>
+            </div>
+            <div id="epgModalBody" class="modal-body"></div>
+        </div>
+    </div>
 
     <script src="app.js"></script>
 </body>

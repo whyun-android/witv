@@ -10,66 +10,116 @@
         android:layout_height="match_parent"
         android:focusable="true" />
 
-    <!-- EPG info overlay (bottom) -->
+    <!-- 视频加载速度（设置中开启后显示在画面右上角） -->
+    <TextView
+        android:id="@+id/load_speed_overlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="16dp"
+        android:background="@color/epg_overlay_bg"
+        android:fontFamily="monospace"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <!-- EPG info overlay (bottom): left = 频道/EPG，right = 信号信息 -->
     <LinearLayout
         android:id="@+id/epg_overlay"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:background="@color/epg_overlay_bg"
-        android:orientation="vertical"
+        android:orientation="horizontal"
         android:padding="24dp"
         android:visibility="gone">
 
-        <!-- Channel info -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-            <ImageView
-                android:id="@+id/channel_logo"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:scaleType="fitCenter" />
-
+            <!-- Channel info -->
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_weight="1"
-                android:orientation="vertical">
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/channel_logo"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:scaleType="fitCenter" />
 
                 <LinearLayout
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:layout_marginStart="16dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
 
-                    <TextView
-                        android:id="@+id/channel_name"
+                    <LinearLayout
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_primary"
-                        android:textSize="22sp"
-                        android:textStyle="bold" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
-                    <ImageView
-                        android:id="@+id/favorite_icon"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:layout_marginStart="8dp"
-                        android:src="@drawable/ic_favorite_border"
-                        android:visibility="gone" />
+                        <TextView
+                            android:id="@+id/channel_name"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:textSize="22sp"
+                            android:textStyle="bold" />
+
+                        <ImageView
+                            android:id="@+id/favorite_icon"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginStart="8dp"
+                            android:src="@drawable/ic_favorite_border"
+                            android:visibility="gone" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/source_info"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="14sp" />
 
                 </LinearLayout>
 
+            </LinearLayout>
+
+            <!-- EPG program info -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical">
+
                 <TextView
-                    android:id="@+id/source_info"
-                    android:layout_width="wrap_content"
+                    android:id="@+id/current_program"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
+                    android:drawablePadding="8dp"
+                    android:textColor="@color/source_active"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/next_program"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:drawablePadding="8dp"
                     android:textColor="@color/text_secondary"
                     android:textSize="14sp" />
 
@@ -77,30 +127,79 @@
 
         </LinearLayout>
 
-        <!-- EPG program info -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_gravity="bottom"
+            android:layout_marginStart="20dp"
+            android:minWidth="280dp"
             android:orientation="vertical">
 
             <TextView
-                android:id="@+id/current_program"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:drawablePadding="8dp"
-                android:textColor="@color/source_active"
-                android:textSize="16sp" />
+                android:text="@string/media_info_title"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/next_program"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:drawablePadding="8dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
 
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/media_info_column_video"
+                        android:textColor="@color/source_active"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/media_info_video_column"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:fontFamily="monospace"
+                        android:lineSpacingExtra="2dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/media_info_column_audio"
+                        android:textColor="@color/source_active"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/media_info_audio_column"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:fontFamily="monospace"
+                        android:lineSpacingExtra="2dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
 
     </LinearLayout>

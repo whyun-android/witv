@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.ProgressBar;
@@ -23,6 +24,8 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends FragmentActivity {
 
+    private static final String TAG = "MainActivity";
+
     private View emptyState;
     private TextView webAddress;
     private ProgressBar loadingProgress;
@@ -40,10 +43,36 @@ public class MainActivity extends FragmentActivity {
         loadingProgress = findViewById(R.id.loading_progress);
         preferenceManager = new PreferenceManager(this);
 
+        logLastPlaybackAtStartup();
+
         updateWebAddress();
         if (savedInstanceState == null) {
             tryAutoPlayLastChannel();
         }
+    }
+
+    /**
+     * 冷/热启动进入首页时记录上次成功播放的频道、M3U 源 id、频道内线路索引（0-based）。
+     */
+    private void logLastPlaybackAtStartup() {
+        long channelId = preferenceManager.getLastChannelId();
+        long m3uSourceId = preferenceManager.getLastSourceId();
+        int streamIndex = preferenceManager.getLastPlayStreamIndex();
+        if (channelId == -1) {
+            Log.i(TAG, "上次播放：未记录（无 last_channel_id）");
+            return;
+        }
+        executor.execute(() -> {
+            AppDatabase db = AppDatabase.getInstance(MainActivity.this);
+            Channel channel = db.channelDao().getById(channelId);
+            String name = channel != null ? channel.displayName : "(频道已不存在或 id=" + channelId + ")";
+            String idxPart = streamIndex >= 0
+                    ? String.format(Locale.US, "%d（第 %d 条线路）", streamIndex, streamIndex + 1)
+                    : "未知（尚未在本频道成功起播或已换台未起播）";
+            Log.i(TAG, String.format(Locale.US,
+                    "上次播放：channelId=%d, name=%s, m3uSourceId=%d, 线路索引(0-based)=%s",
+                    channelId, name, m3uSourceId, idxPart));
+        });
     }
 
     public void showEmptyState(boolean empty) {
@@ -122,7 +151,7 @@ public class MainActivity extends FragmentActivity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_MENU) {
+        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_F6) {
             startActivity(new Intent(this, SettingsActivity.class));
             return true;
         }

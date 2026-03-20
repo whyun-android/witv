@@ -18,4 +18,21 @@
     <string name="added_to_favorites">已添加到收藏</string>
     <string name="removed_from_favorites">已取消收藏</string>
     <string name="auto_play_last">启动播放上次频道</string>
+    <string name="show_load_speed_overlay">播放页显示视频加载速度</string>
+    <string name="show_load_speed_overlay_hint">开启后在播放画面右上角实时显示估算加载速度（需正在缓冲或播放）</string>
+    <string name="load_speed_overlay_idle">未加载</string>
+    <string name="load_speed_overlay_collecting">统计中…</string>
+    <string name="media_info_title">信号信息</string>
+    <string name="media_info_column_video">视频</string>
+    <string name="media_info_column_audio">音频</string>
+    <string name="media_info_resolution">分辨率</string>
+    <string name="media_info_video_codec">视频编码</string>
+    <string name="media_info_video_bitrate">视频码率</string>
+    <string name="media_info_frame_rate">帧率</string>
+    <string name="media_info_audio_codec">音频编码</string>
+    <string name="media_info_audio_bitrate">音频码率</string>
+    <string name="media_info_sample_rate">采样率</string>
+    <string name="media_info_channels">声道</string>
+    <string name="media_info_waiting">获取中…</string>
+    <string name="media_info_not_provided">未提供</string>
 </resources>

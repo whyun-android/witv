@@ -241,6 +241,12 @@ input:focus {
     display: flex;
     align-items: center;
     gap: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.channel-item:hover {
+    background: #162a3a;
 }
 
 .channel-item img {
@@ -311,6 +317,141 @@ input:focus {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+.loading-state {
+    text-align: center;
+    padding: 32px;
+    color: #78909c;
+    font-size: 14px;
+}
+
+/* EPG Modal */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.show {
+    display: flex;
+}
+
+.modal-content {
+    background: #1a2733;
+    border: 1px solid #37474f;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 420px;
+    overflow: hidden;
+    animation: modalIn 0.2s ease-out;
+}
+
+@keyframes modalIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #263238;
+}
+
+.modal-header h3 {
+    font-size: 16px;
+    color: #eceff1;
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: #78909c;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: #eceff1;
+}
+
+.modal-body {
+    padding: 16px 20px;
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+}
+
+.epg-item {
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    background: #0d1b2a;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.epg-item:last-child {
+    margin-bottom: 0;
+}
+
+.epg-current {
+    border-left: 3px solid #4caf50;
+}
+
+.epg-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #78909c;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.epg-current .epg-label {
+    color: #4caf50;
+}
+
+.epg-title {
+    font-size: 15px;
+    color: #eceff1;
+}
+
+.epg-time {
+    font-size: 12px;
+    color: #546e7a;
+}
+
+.epg-desc {
+    font-size: 12px;
+    color: #78909c;
+    margin-top: 6px;
+    line-height: 1.45;
+    max-height: 4.5em;
+    overflow: hidden;
+}
+
+.epg-footer {
+    font-size: 12px;
+    color: #546e7a;
+    text-align: center;
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid #263238;
+}
+
+.epg-empty {
+    text-align: center;
+    color: #546e7a;
+    padding: 16px;
 }
 
 @media (max-width: 600px) {

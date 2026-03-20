@@ -14,6 +14,9 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.shadows.ShadowLooper;
 
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
+
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -35,6 +38,7 @@ public class PlayerManagerTest {
         int lastSwitchIndex = -1;
         int lastSwitchTotal = -1;
         boolean allSourcesFailed = false;
+        int allSourcesFailedCount = 0;
         int playbackStartedCount = 0;
         int lastPlaybackSourceIndex = -1;
         String lastError = null;
@@ -49,6 +53,7 @@ public class PlayerManagerTest {
         @Override
         public void onAllSourcesFailed() {
             allSourcesFailed = true;
+            allSourcesFailedCount++;
         }
 
         @Override
@@ -60,6 +65,17 @@ public class PlayerManagerTest {
         @Override
         public void onError(String message) {
             lastError = message;
+        }
+
+        void reset() {
+            sourceSwitchingCount = 0;
+            lastSwitchIndex = -1;
+            lastSwitchTotal = -1;
+            allSourcesFailed = false;
+            allSourcesFailedCount = 0;
+            playbackStartedCount = 0;
+            lastPlaybackSourceIndex = -1;
+            lastError = null;
         }
     }
 
@@ -78,6 +94,12 @@ public class PlayerManagerTest {
         Field listenerField = PlayerManager.class.getDeclaredField("playerListener");
         listenerField.setAccessible(true);
         player.addListener((androidx.media3.common.Player.Listener) listenerField.get(playerManager));
+    }
+
+    private Player.Listener getPlayerListener() throws Exception {
+        Field listenerField = PlayerManager.class.getDeclaredField("playerListener");
+        listenerField.setAccessible(true);
+        return (Player.Listener) listenerField.get(playerManager);
     }
 
     @Before
@@ -327,5 +349,182 @@ public class PlayerManagerTest {
 
         ShadowLooper.idleMainLooper(15_000, TimeUnit.MILLISECONDS);
         assertTrue(callback.allSourcesFailed);
+    }
+
+    // ============================================================
+    // Channel switch: old timeout should not affect new channel
+    // ============================================================
+
+    @Test
+    public void oldTimeoutInvalidatedOnChannelSwitch() throws Exception {
+        initializePlayerViaReflection();
+
+        List<ChannelSource> channelA = Arrays.asList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0),
+                new ChannelSource(1, "http://a.com/2.m3u8", 1)
+        );
+        playerManager.playChannel(channelA);
+        assertEquals(0, playerManager.getCurrentSourceIndex());
+
+        ShadowLooper.idleMainLooper(10_000, TimeUnit.MILLISECONDS);
+        assertEquals(0, playerManager.getCurrentSourceIndex());
+
+        List<ChannelSource> channelB = Collections.singletonList(
+                new ChannelSource(2, "http://b.com/1.m3u8", 0)
+        );
+        playerManager.playChannel(channelB);
+        callback.reset();
+
+        ShadowLooper.idleMainLooper(5_000, TimeUnit.MILLISECONDS);
+
+        assertEquals(0, playerManager.getCurrentSourceIndex());
+        assertEquals(1, playerManager.getSourceCount());
+        assertFalse(callback.allSourcesFailed);
+        assertEquals(0, callback.sourceSwitchingCount);
+    }
+
+    @Test
+    public void newChannelGetsOwnTimeout() throws Exception {
+        initializePlayerViaReflection();
+
+        List<ChannelSource> channelA = Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)
+        );
+        playerManager.playChannel(channelA);
+
+        ShadowLooper.idleMainLooper(10_000, TimeUnit.MILLISECONDS);
+
+        List<ChannelSource> channelB = Arrays.asList(
+                new ChannelSource(2, "http://b.com/1.m3u8", 0),
+                new ChannelSource(2, "http://b.com/2.m3u8", 1)
+        );
+        playerManager.playChannel(channelB);
+        callback.reset();
+
+        ShadowLooper.idleMainLooper(15_000, TimeUnit.MILLISECONDS);
+
+        assertEquals(1, playerManager.getCurrentSourceIndex());
+        assertEquals(1, callback.sourceSwitchingCount);
+    }
+
+    // ============================================================
+    // Channel switch: stale error callback should be ignored
+    // ============================================================
+
+    @Test
+    public void staleErrorCallbackIgnoredAfterChannelSwitch() throws Exception {
+        initializePlayerViaReflection();
+
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)
+        ));
+
+        List<ChannelSource> channelB = Arrays.asList(
+                new ChannelSource(2, "http://b.com/1.m3u8", 0),
+                new ChannelSource(2, "http://b.com/2.m3u8", 1)
+        );
+        playerManager.playChannel(channelB);
+        callback.reset();
+
+        PlaybackException staleError = new PlaybackException(
+                "Stale error from channel A",
+                null,
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+        );
+        getPlayerListener().onPlayerError(staleError);
+
+        assertEquals(0, playerManager.getCurrentSourceIndex());
+        assertEquals(2, playerManager.getSourceCount());
+        assertFalse(callback.allSourcesFailed);
+        assertEquals(0, callback.sourceSwitchingCount);
+    }
+
+    @Test
+    public void staleReadyCallbackIgnoredAfterChannelSwitch() throws Exception {
+        initializePlayerViaReflection();
+
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)
+        ));
+
+        playerManager.playChannel(Arrays.asList(
+                new ChannelSource(2, "http://b.com/1.m3u8", 0),
+                new ChannelSource(2, "http://b.com/2.m3u8", 1)
+        ));
+        callback.reset();
+
+        getPlayerListener().onPlaybackStateChanged(Player.STATE_READY);
+
+        assertEquals(0, callback.playbackStartedCount);
+    }
+
+    // ============================================================
+    // Channel switch after all sources failed
+    // ============================================================
+
+    @Test
+    public void switchChannelAfterAllSourcesFailedWorks() throws Exception {
+        initializePlayerViaReflection();
+
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)
+        ));
+
+        ShadowLooper.idleMainLooper(15_000, TimeUnit.MILLISECONDS);
+        assertTrue(callback.allSourcesFailed);
+        callback.reset();
+
+        List<ChannelSource> channelB = Arrays.asList(
+                new ChannelSource(2, "http://b.com/1.m3u8", 0),
+                new ChannelSource(2, "http://b.com/2.m3u8", 1)
+        );
+        playerManager.playChannel(channelB);
+
+        assertEquals(0, playerManager.getCurrentSourceIndex());
+        assertEquals(2, playerManager.getSourceCount());
+        assertFalse(callback.allSourcesFailed);
+    }
+
+    @Test
+    public void noStaleTimeoutAfterAllSourcesFailedAndSwitch() throws Exception {
+        initializePlayerViaReflection();
+
+        playerManager.playChannel(Arrays.asList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0),
+                new ChannelSource(1, "http://a.com/2.m3u8", 1)
+        ));
+
+        ShadowLooper.idleMainLooper(15_000, TimeUnit.MILLISECONDS);
+        ShadowLooper.idleMainLooper(15_000, TimeUnit.MILLISECONDS);
+        assertTrue(callback.allSourcesFailed);
+        callback.reset();
+
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(2, "http://b.com/1.m3u8", 0)
+        ));
+
+        ShadowLooper.idleMainLooper(15_000, TimeUnit.MILLISECONDS);
+        assertEquals(1, callback.allSourcesFailedCount);
+    }
+
+    // ============================================================
+    // Empty source list should cancel old timeout
+    // ============================================================
+
+    @Test
+    public void playChannelWithEmptySourcesCancelsOldTimeout() throws Exception {
+        initializePlayerViaReflection();
+
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)
+        ));
+
+        playerManager.playChannel(new ArrayList<>());
+        assertTrue(callback.allSourcesFailed);
+        assertEquals(1, callback.allSourcesFailedCount);
+
+        ShadowLooper.idleMainLooper(15_000, TimeUnit.MILLISECONDS);
+
+        assertEquals(1, callback.allSourcesFailedCount);
     }
 }
