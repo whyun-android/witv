@@ -200,14 +200,22 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     private void loadEpgInfo() {
-        if (currentChannel == null || currentChannel.tvgId == null || currentChannel.tvgId.isEmpty()) {
+        if (currentChannel == null) {
+            currentProgramView.setText(getString(R.string.no_epg));
+            nextProgramView.setVisibility(View.GONE);
+            return;
+        }
+
+        boolean hasTvgId = currentChannel.tvgId != null && !currentChannel.tvgId.isEmpty();
+        boolean hasTvgName = currentChannel.tvgName != null && !currentChannel.tvgName.isEmpty();
+        if (!hasTvgId && !hasTvgName) {
             currentProgramView.setText(getString(R.string.no_epg));
             nextProgramView.setVisibility(View.GONE);
             return;
         }
 
         executor.execute(() -> {
-            List<EpgProgram> programs = epgRepository.getCurrentAndNext(currentChannel.tvgId);
+            List<EpgProgram> programs = epgRepository.getCurrentAndNext(currentChannel.tvgId, currentChannel.tvgName);
             runOnUiThread(() -> {
                 if (programs != null && !programs.isEmpty()) {
                     EpgProgram current = programs.get(0);
@@ -332,6 +340,13 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                     return true;
                 }
                 break;
+            case KeyEvent.KEYCODE_INFO:
+                if (overlayVisible) {
+                    hideOverlay();
+                } else {
+                    showOverlayTemporarily();
+                }
+                return true;
             case KeyEvent.KEYCODE_MENU:
                 startActivity(new android.content.Intent(this, SettingsActivity.class));
                 return true;

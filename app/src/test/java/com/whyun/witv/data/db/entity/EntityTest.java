@@ -136,6 +136,22 @@ public class EntityTest {
         assertTrue(ep.endTime > ep.startTime);
     }
 
+    // --- EpgChannel ---
+
+    @Test
+    public void epgChannelDefaultConstructor() {
+        EpgChannel ec = new EpgChannel();
+        assertEquals("", ec.channelId);
+        assertNull(ec.displayName);
+    }
+
+    @Test
+    public void epgChannelParameterizedConstructor() {
+        EpgChannel ec = new EpgChannel("cctv1", "CCTV-1 综合");
+        assertEquals("cctv1", ec.channelId);
+        assertEquals("CCTV-1 综合", ec.displayName);
+    }
+
     // --- FavoriteChannel ---
 
     @Test

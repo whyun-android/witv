@@ -40,6 +40,31 @@ public class EpgParser {
         }
     }
 
+    /**
+     * XMLTV channel mapping: channelId -> displayName.
+     */
+    public static class EpgChannelData {
+        public String channelId;
+        public String displayName;
+
+        public EpgChannelData(String channelId, String displayName) {
+            this.channelId = channelId;
+            this.displayName = displayName;
+        }
+    }
+
+    /**
+     * Combined parse result containing both channel mappings and programs.
+     */
+    public static class ParseResult {
+        public List<EpgChannelData> channels;
+        public List<EpgProgramData> programs;
+
+        public ParseResult(List<EpgChannelData> channels, List<EpgProgramData> programs) {
+            this.channels = channels;
+            this.programs = programs;
+        }
+    }
 
     /**
      * Parses XMLTV EPG data from an input stream.
@@ -51,6 +76,20 @@ public class EpgParser {
      */
     public List<EpgProgramData> parse(InputStream inputStream)
             throws XmlPullParserException, IOException {
+        return parseFull(inputStream).programs;
+    }
+
+    /**
+     * Parses XMLTV EPG data including channel mappings.
+     *
+     * @param inputStream The XML input stream
+     * @return ParseResult with channels and programs
+     * @throws XmlPullParserException if XML parsing fails
+     * @throws IOException if reading fails
+     */
+    public ParseResult parseFull(InputStream inputStream)
+            throws XmlPullParserException, IOException {
+        List<EpgChannelData> channels = new ArrayList<>();
         List<EpgProgramData> programs = new ArrayList<>();
 
         XmlPullParser parser = Xml.newPullParser();
@@ -60,7 +99,12 @@ public class EpgParser {
         int eventType = parser.getEventType();
         while (eventType != XmlPullParser.END_DOCUMENT) {
             if (eventType == XmlPullParser.START_TAG) {
-                if ("programme".equals(parser.getName())) {
+                if ("channel".equals(parser.getName())) {
+                    EpgChannelData ch = parseChannel(parser);
+                    if (ch != null) {
+                        channels.add(ch);
+                    }
+                } else if ("programme".equals(parser.getName())) {
                     EpgProgramData program = parseProgramme(parser);
                     if (program != null) {
                         programs.add(program);
@@ -70,7 +114,33 @@ public class EpgParser {
             eventType = parser.next();
         }
 
-        return programs;
+        return new ParseResult(channels, programs);
+    }
+
+    private EpgChannelData parseChannel(XmlPullParser parser)
+            throws XmlPullParserException, IOException {
+        String id = parser.getAttributeValue(null, "id");
+        if (id == null || id.isEmpty()) {
+            skipToEndTag(parser, "channel");
+            return null;
+        }
+
+        String displayName = "";
+        int eventType = parser.next();
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            if (eventType == XmlPullParser.START_TAG && "display-name".equals(parser.getName())) {
+                displayName = readText(parser);
+                break;
+            } else if (eventType == XmlPullParser.END_TAG && "channel".equals(parser.getName())) {
+                break;
+            }
+            eventType = parser.next();
+        }
+        if (eventType != XmlPullParser.END_TAG || !"channel".equals(parser.getName())) {
+            skipToEndTag(parser, "channel");
+        }
+
+        return new EpgChannelData(id, displayName);
     }
 
     private EpgProgramData parseProgramme(XmlPullParser parser)

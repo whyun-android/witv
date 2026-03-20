@@ -11,18 +11,20 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
 
 import com.whyun.witv.data.db.dao.ChannelDao;
 import com.whyun.witv.data.db.dao.ChannelSourceDao;
+import com.whyun.witv.data.db.dao.EpgChannelDao;
 import com.whyun.witv.data.db.dao.EpgDao;
 import com.whyun.witv.data.db.dao.FavoriteChannelDao;
 import com.whyun.witv.data.db.dao.M3USourceDao;
 import com.whyun.witv.data.db.entity.Channel;
 import com.whyun.witv.data.db.entity.ChannelSource;
+import com.whyun.witv.data.db.entity.EpgChannel;
 import com.whyun.witv.data.db.entity.EpgProgram;
 import com.whyun.witv.data.db.entity.FavoriteChannel;
 import com.whyun.witv.data.db.entity.M3USource;
 
 @Database(
-    entities = {M3USource.class, Channel.class, ChannelSource.class, EpgProgram.class, FavoriteChannel.class},
-    version = 2,
+    entities = {M3USource.class, Channel.class, ChannelSource.class, EpgProgram.class, FavoriteChannel.class, EpgChannel.class},
+    version = 3,
     exportSchema = false
 )
 public abstract class AppDatabase extends RoomDatabase {
@@ -40,6 +42,17 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
+    static final Migration MIGRATION_2_3 = new Migration(2, 3) {
+        @Override
+        public void migrate(@NonNull SupportSQLiteDatabase database) {
+            database.execSQL("CREATE TABLE IF NOT EXISTS `epg_channels` (" +
+                    "`channelId` TEXT NOT NULL, " +
+                    "`displayName` TEXT, " +
+                    "PRIMARY KEY(`channelId`))");
+            database.execSQL("CREATE INDEX IF NOT EXISTS `index_epg_channels_displayName` ON `epg_channels` (`displayName`)");
+        }
+    };
+
     public static AppDatabase getInstance(Context context) {
         if (INSTANCE == null) {
             synchronized (AppDatabase.class) {
@@ -49,7 +62,7 @@ public abstract class AppDatabase extends RoomDatabase {
                         AppDatabase.class,
                         "witv_database"
                     )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build();
                 }
             }
@@ -61,5 +74,6 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract ChannelDao channelDao();
     public abstract ChannelSourceDao channelSourceDao();
     public abstract EpgDao epgDao();
+    public abstract EpgChannelDao epgChannelDao();
     public abstract FavoriteChannelDao favoriteChannelDao();
 }

@@ -194,4 +194,101 @@ public class EpgParserTest {
         assertEquals("ch_a", programs.get(0).channelId);
         assertEquals("ch_b", programs.get(1).channelId);
     }
+
+    // --- parseFull / channel element tests ---
+
+    @Test
+    public void parseFullWithChannels() throws Exception {
+        String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<tv>\n"
+                + "  <channel id=\"cctv1\">\n"
+                + "    <display-name>CCTV-1 综合</display-name>\n"
+                + "  </channel>\n"
+                + "  <channel id=\"cctv2\">\n"
+                + "    <display-name>CCTV-2 财经</display-name>\n"
+                + "  </channel>\n"
+                + "  <programme start=\"20240101120000 +0800\" stop=\"20240101130000 +0800\" channel=\"cctv1\">\n"
+                + "    <title>新闻联播</title>\n"
+                + "  </programme>\n"
+                + "</tv>";
+
+        EpgParser.ParseResult result = parser.parseFull(toStream(xml));
+
+        assertEquals(2, result.channels.size());
+        assertEquals("cctv1", result.channels.get(0).channelId);
+        assertEquals("CCTV-1 综合", result.channels.get(0).displayName);
+        assertEquals("cctv2", result.channels.get(1).channelId);
+        assertEquals("CCTV-2 财经", result.channels.get(1).displayName);
+
+        assertEquals(1, result.programs.size());
+        assertEquals("新闻联播", result.programs.get(0).title);
+    }
+
+    @Test
+    public void parseFullWithNoChannels() throws Exception {
+        String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<tv>\n"
+                + "  <programme start=\"20240101120000 +0800\" stop=\"20240101130000 +0800\" channel=\"ch1\">\n"
+                + "    <title>节目A</title>\n"
+                + "  </programme>\n"
+                + "</tv>";
+
+        EpgParser.ParseResult result = parser.parseFull(toStream(xml));
+
+        assertTrue(result.channels.isEmpty());
+        assertEquals(1, result.programs.size());
+    }
+
+    @Test
+    public void parseFullSkipsChannelWithoutId() throws Exception {
+        String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<tv>\n"
+                + "  <channel>\n"
+                + "    <display-name>No ID Channel</display-name>\n"
+                + "  </channel>\n"
+                + "  <channel id=\"valid\">\n"
+                + "    <display-name>Valid Channel</display-name>\n"
+                + "  </channel>\n"
+                + "</tv>";
+
+        EpgParser.ParseResult result = parser.parseFull(toStream(xml));
+
+        assertEquals(1, result.channels.size());
+        assertEquals("valid", result.channels.get(0).channelId);
+        assertEquals("Valid Channel", result.channels.get(0).displayName);
+    }
+
+    @Test
+    public void parseFullChannelWithoutDisplayName() throws Exception {
+        String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<tv>\n"
+                + "  <channel id=\"ch1\">\n"
+                + "  </channel>\n"
+                + "</tv>";
+
+        EpgParser.ParseResult result = parser.parseFull(toStream(xml));
+
+        assertEquals(1, result.channels.size());
+        assertEquals("ch1", result.channels.get(0).channelId);
+        assertEquals("", result.channels.get(0).displayName);
+    }
+
+    @Test
+    public void parseStillWorksAfterParseFullAdded() throws Exception {
+        String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<tv>\n"
+                + "  <channel id=\"cctv1\">\n"
+                + "    <display-name>CCTV-1</display-name>\n"
+                + "  </channel>\n"
+                + "  <programme start=\"20240101120000 +0800\" stop=\"20240101130000 +0800\" channel=\"cctv1\">\n"
+                + "    <title>节目X</title>\n"
+                + "  </programme>\n"
+                + "</tv>";
+
+        List<EpgParser.EpgProgramData> programs = parser.parse(toStream(xml));
+
+        assertEquals(1, programs.size());
+        assertEquals("cctv1", programs.get(0).channelId);
+        assertEquals("节目X", programs.get(0).title);
+    }
 }

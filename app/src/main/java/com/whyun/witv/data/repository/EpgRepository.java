@@ -3,7 +3,9 @@ package com.whyun.witv.data.repository;
 import android.content.Context;
 
 import com.whyun.witv.data.db.AppDatabase;
+import com.whyun.witv.data.db.dao.EpgChannelDao;
 import com.whyun.witv.data.db.dao.EpgDao;
+import com.whyun.witv.data.db.entity.EpgChannel;
 import com.whyun.witv.data.db.entity.EpgProgram;
 import com.whyun.witv.data.parser.EpgParser;
 
@@ -25,11 +27,13 @@ import okhttp3.Response;
 public class EpgRepository {
 
     private final EpgDao epgDao;
+    private final EpgChannelDao epgChannelDao;
     private final OkHttpClient httpClient;
 
     public EpgRepository(Context context) {
         AppDatabase db = AppDatabase.getInstance(context);
         this.epgDao = db.epgDao();
+        this.epgChannelDao = db.epgChannelDao();
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
@@ -52,13 +56,21 @@ public class EpgRepository {
                 throw new IOException("Failed to fetch EPG: " + response.code());
             }
             try (InputStream inputStream = response.body().byteStream()) {
-                List<EpgParser.EpgProgramData> programs = new EpgParser().parse(inputStream);
+                EpgParser.ParseResult result = new EpgParser().parseFull(inputStream);
 
-                // Clear old EPG data and save new
                 epgDao.deleteAll();
+                epgChannelDao.deleteAll();
+
+                List<EpgChannel> channelEntities = new ArrayList<>();
+                for (EpgParser.EpgChannelData ch : result.channels) {
+                    channelEntities.add(new EpgChannel(ch.channelId, ch.displayName));
+                }
+                if (!channelEntities.isEmpty()) {
+                    epgChannelDao.insertAll(channelEntities);
+                }
 
                 List<EpgProgram> entities = new ArrayList<>();
-                for (EpgParser.EpgProgramData p : programs) {
+                for (EpgParser.EpgProgramData p : result.programs) {
                     entities.add(new EpgProgram(
                             p.channelId,
                             p.title,
@@ -75,10 +87,27 @@ public class EpgRepository {
     }
 
     /**
-     * Gets current and next program for a channel by tvg-id.
+     * Gets current and next program for a channel.
+     * First tries matching by tvgId; falls back to tvgName via XMLTV channel display-name.
      */
-    public List<EpgProgram> getCurrentAndNext(String tvgId) {
-        return epgDao.getCurrentAndNext(tvgId, System.currentTimeMillis());
+    public List<EpgProgram> getCurrentAndNext(String tvgId, String tvgName) {
+        long now = System.currentTimeMillis();
+
+        if (tvgId != null && !tvgId.isEmpty()) {
+            List<EpgProgram> programs = epgDao.getCurrentAndNext(tvgId, now);
+            if (!programs.isEmpty()) {
+                return programs;
+            }
+        }
+
+        if (tvgName != null && !tvgName.isEmpty()) {
+            String mappedId = epgChannelDao.findChannelIdByDisplayName(tvgName);
+            if (mappedId != null && !mappedId.isEmpty()) {
+                return epgDao.getCurrentAndNext(mappedId, now);
+            }
+        }
+
+        return new ArrayList<>();
     }
 
     /**
