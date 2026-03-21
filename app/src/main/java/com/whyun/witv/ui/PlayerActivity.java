@@ -38,7 +38,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class PlayerActivity extends FragmentActivity implements PlayerManager.Callback {
+public class PlayerActivity extends FragmentActivity implements PlayerManager.Callback, SettingsPanelHost {
 
     public static final String EXTRA_CHANNEL_ID = "channel_id";
     public static final String EXTRA_SOURCE_ID = "source_id";
@@ -60,6 +60,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private TextView switchingToast;
     private TextView loadSpeedOverlay;
     private RecyclerView channelListOverlay;
+    private View settingsPanelOverlay;
+    private PlayerView playerView;
 
     private boolean isFavorite = false;
 
@@ -126,6 +128,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
         initViews();
         initPlayer();
+        if (savedInstanceState == null) {
+            getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.settings_panel_content, new SettingsCollapsibleFragment(), "settings_drawer")
+                    .commitNow();
+        }
         applyLoadSpeedOverlayPreference();
         loadAndPlay();
     }
@@ -144,10 +151,13 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         loadSpeedOverlay = findViewById(R.id.load_speed_overlay);
         channelListOverlay = findViewById(R.id.channel_list_overlay);
         channelListOverlay.setLayoutManager(new LinearLayoutManager(this));
+
+        settingsPanelOverlay = findViewById(R.id.settings_panel_overlay);
+        findViewById(R.id.settings_scrim).setOnClickListener(v -> hideSettingsPanel());
     }
 
     private void initPlayer() {
-        PlayerView playerView = findViewById(R.id.player_view);
+        playerView = findViewById(R.id.player_view);
         playerView.setUseController(false);
 
         playerManager = new PlayerManager(this);
@@ -398,6 +408,64 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         overlayVisible = false;
     }
 
+    private void hideSettingsPanel() {
+        SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
+                .findFragmentByTag("settings_drawer");
+        if (f != null) {
+            f.onSettingsDrawerDismiss();
+        }
+        if (settingsPanelOverlay != null) {
+            settingsPanelOverlay.setVisibility(View.GONE);
+        }
+        if (playerView != null) {
+            playerView.requestFocus();
+        }
+    }
+
+    private void showSettingsPanel() {
+        if (settingsPanelOverlay == null) {
+            return;
+        }
+        settingsPanelOverlay.setVisibility(View.VISIBLE);
+        SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
+                .findFragmentByTag("settings_drawer");
+        if (f != null) {
+            f.refreshAndFocus();
+        }
+    }
+
+    private boolean isSettingsPanelVisible() {
+        return settingsPanelOverlay != null && settingsPanelOverlay.getVisibility() == View.VISIBLE;
+    }
+
+    /** 供 {@link SettingsCollapsibleFragment} 读取当前频道以展示「切换源」列表 */
+    public long getCurrentChannelIdForPanel() {
+        return currentChannelId;
+    }
+
+    @Override
+    public boolean shouldShowStreamSwitchGroup() {
+        return currentChannelId > 0;
+    }
+
+    @Override
+    public PlayerManager getPlayerManagerOrNull() {
+        return playerManager;
+    }
+
+    @Override
+    public void onManualStreamSwitch(int index) {
+        if (playerManager != null) {
+            playerManager.manualSwitchSource(index);
+        }
+    }
+
+    @Override
+    public void onPlaybackOverlayPreferenceChanged() {
+        applyLoadSpeedOverlayPreference();
+        startLoadSpeedRefreshIfNeeded();
+    }
+
     private void switchChannel(int direction) {
         if (allChannels == null || allChannels.isEmpty()) return;
 
@@ -438,6 +506,22 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (isSettingsPanelVisible()) {
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
+                        .findFragmentByTag("settings_drawer");
+                if (f != null && f.handleBack()) {
+                    return true;
+                }
+                hideSettingsPanel();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_F6) {
+                hideSettingsPanel();
+                return true;
+            }
+        }
+
         switch (keyCode) {
             case KeyEvent.KEYCODE_DPAD_UP:
                 if (channelListOverlay.getVisibility() != View.VISIBLE) {
@@ -492,7 +576,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 return true;
             case KeyEvent.KEYCODE_MENU:
             case KeyEvent.KEYCODE_F6:
-                startActivity(new android.content.Intent(this, SettingsActivity.class));
+                showSettingsPanel();
                 return true;
             case KeyEvent.KEYCODE_BOOKMARK:
             case KeyEvent.KEYCODE_STAR:

@@ -21,6 +21,21 @@
 
 - 新增 7 个 PlayerManager 单元测试，覆盖频道切换状态隔离、陈旧回调防护、全部失败后恢复等场景
 
+## [1.0.1] - 2026-03-21
+
+### Added
+
+- 播放页菜单键 / F6：右侧设置抽屉（遮罩 + 面板），不离开播放界面
+- 设置主菜单在右、子菜单在左：地址管理、切换源（仅播放页）、EPG、播放选项；帮助打开独立弹窗
+- `SettingsCollapsibleFragment` 与 `SettingsPanelHost`，播放页与独立设置页共用同一套设置 UI
+- 帮助弹窗内单独一行展示应用版本号（`versionName`）
+
+### Changed
+
+- `SettingsActivity` 改为全屏承载设置 Fragment；原左右分栏布局移除
+- 切换源子菜单仅显示「线路 x」，不展示播放 URL
+- 设置抽屉总宽度约 480dp，便于双栏主/子菜单
+
 ## [1.0.0] - 2026-03-20
 
 ### Added
@@ -44,5 +59,6 @@
 - 自动播放在 Activity 重建时重复触发
 - 刷新播放源时频道 ID 重建导致收藏记录级联删除
 
-[Unreleased]: https://github.com/whyun-android/witv/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/whyun-android/witv/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/whyun-android/witv/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/whyun-android/witv/releases/tag/v1.0.0

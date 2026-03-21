@@ -225,4 +225,29 @@
         android:padding="8dp"
         android:visibility="gone" />
 
+    <!-- Settings: right drawer over player -->
+    <LinearLayout
+        android:id="@+id/settings_panel_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/settings_scrim"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="#99000000"
+            android:focusable="true" />
+
+        <FrameLayout
+            android:id="@+id/settings_panel_content"
+            android:layout_width="480dp"
+            android:layout_height="match_parent"
+            android:background="#0F1923"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
 </FrameLayout>
