@@ -8,14 +8,19 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
+import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
-import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.BehindLiveWindowException;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.ui.PlayerView;
 
 import com.whyun.witv.WiTVApp;
@@ -37,6 +42,36 @@ public class PlayerManager {
     }
 
     private static final long SOURCE_TIMEOUT_MS = 15_000;
+
+    /**
+     * 直播 HLS：目标离 live edge 更远，延迟略增但更不易掉出滑动窗口。
+     */
+    private static final long LIVE_TARGET_OFFSET_MS = 10_000L;
+    /** 不允许贴边过近（与 target 配合，减少 BehindLiveWindow）。 */
+    private static final long LIVE_MIN_OFFSET_MS = 5_000L;
+
+    private static final int HTTP_CONNECT_TIMEOUT_MS = 12_000;
+    private static final int HTTP_READ_TIMEOUT_MS = 45_000;
+
+    /** 固定 UA，避免部分 IPTV 源对默认 ExoPlayer/Media3 特征敏感。 */
+    private static final String HTTP_USER_AGENT = "stagefright/1.2 (Linux;Android 7.1.2)";
+
+    /**
+     * 是否为「落后于直播窗口」类错误（见 Media3 直播文档：应 seekToDefaultPosition 而非换源）。
+     */
+    static boolean isBehindLiveWindowError(@NonNull PlaybackException error) {
+        if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+            return true;
+        }
+        Throwable c = error.getCause();
+        while (c != null) {
+            if (c instanceof BehindLiveWindowException) {
+                return true;
+            }
+            c = c.getCause();
+        }
+        return false;
+    }
 
     private final Context context;
     private ExoPlayer player;
@@ -107,6 +142,20 @@ public class PlayerManager {
                 return;
             }
             cancelTimeout();
+
+            if (isBehindLiveWindowError(error)) {
+                String url = currentSourceIndex < currentSources.size()
+                        ? currentSources.get(currentSourceIndex).url : "unknown";
+                Log.w(TAG, String.format(Locale.US,
+                        "Behind live window — seekToDefaultPosition + prepare (same source %d/%d): %s",
+                        currentSourceIndex + 1, currentSources.size(), url));
+                player.seekToDefaultPosition();
+                player.prepare();
+                player.setPlayWhenReady(true);
+                startTimeout();
+                return;
+            }
+
             String url = currentSourceIndex < currentSources.size()
                     ? currentSources.get(currentSourceIndex).url : "unknown";
             Log.e(TAG, String.format(Locale.US,
@@ -135,17 +184,27 @@ public class PlayerManager {
 
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                        15_000,  // minBufferMs
-                        50_000,  // maxBufferMs
-                        2500,    // bufferForPlaybackMs
-                        5000     // bufferForPlaybackAfterRebufferMs
+                        20_000,  // minBufferMs
+                        55_000,  // maxBufferMs
+                        3000,    // bufferForPlaybackMs
+                        9000     // bufferForPlaybackAfterRebufferMs
                 )
                 .build();
+
+        DefaultHttpDataSource.Factory httpDataSourceFactory = new DefaultHttpDataSource.Factory()
+                .setConnectTimeoutMs(HTTP_CONNECT_TIMEOUT_MS)
+                .setReadTimeoutMs(HTTP_READ_TIMEOUT_MS)
+                .setUserAgent(HTTP_USER_AGENT);
+        DefaultDataSource.Factory dataSourceFactory =
+                new DefaultDataSource.Factory(context, httpDataSourceFactory);
+        DefaultMediaSourceFactory mediaSourceFactory =
+                new DefaultMediaSourceFactory(dataSourceFactory);
 
         DefaultBandwidthMeter bandwidthMeter = WiTVApp.getInstance().getOrCreateBandwidthMeter();
         player = new ExoPlayer.Builder(context)
                 .setLoadControl(loadControl)
                 .setBandwidthMeter(bandwidthMeter)
+                .setMediaSourceFactory(mediaSourceFactory)
                 .build();
 
         playerView.setPlayer(player);
@@ -209,6 +268,12 @@ public class PlayerManager {
         if (lowerUrl.contains(".m3u8") || lowerUrl.contains("/hls/")
                 || lowerUrl.contains("type=m3u8")) {
             builder.setMimeType(MimeTypes.APPLICATION_M3U8);
+            MediaItem.LiveConfiguration liveConfig = new MediaItem.LiveConfiguration.Builder()
+                    .setTargetOffsetMs(LIVE_TARGET_OFFSET_MS)
+                    .setMinOffsetMs(LIVE_MIN_OFFSET_MS)
+                    .setMaxOffsetMs(C.TIME_UNSET)
+                    .build();
+            builder.setLiveConfiguration(liveConfig);
         } else if (lowerUrl.contains(".mpd") || lowerUrl.contains("/dash/")) {
             builder.setMimeType(MimeTypes.APPLICATION_MPD);
         } else if (lowerUrl.endsWith(".ts") || lowerUrl.contains(".ts?")) {

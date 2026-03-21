@@ -4,6 +4,22 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [1.0.2] - 2026-03-21
+
+### Added
+
+- 直播 HLS：`BehindLiveWindowException` 时在同源上 `seekToDefaultPosition` + `prepare` 恢复，减少误换源
+- 直播稳定性：`MediaItem.LiveConfiguration`（目标/最小离边距离）、`DefaultLoadControl` 缓冲参数上调
+- 网络：`DefaultHttpDataSource` 连接/读取超时 + `DefaultMediaSourceFactory`；HTTP `User-Agent` 固定为 `stagefright/1.2 (Linux;Android 7.1.2)`
+- EPG 信号信息：将 `avc1` / `mp4a` 等原始 `codecs` 显示为通俗中文说明
+- `MediaInfoFormatter` 单元测试；`PlayerManager` 补充 `BehindLiveWindow` 识别相关测试
+- 文档：`docs/playback-and-ui-changes.md`（播放与界面改动说明）
+
+### Changed
+
+- 播放页设置抽屉打开时，方向键与确认键用于菜单导航，不再换台或打开频道列表；遮罩不设为可聚焦
+- EPG 浮层信号信息去掉视频/音频码率与帧率，仅保留分辨率、编码、采样率、声道
+
 ## [1.0.1] - 2026-03-21
 
 ### Added
@@ -54,5 +70,6 @@
 - 自动播放在 Activity 重建时重复触发
 - 刷新播放源时频道 ID 重建导致收藏记录级联删除
 
+[1.0.2]: https://github.com/whyun-android/witv/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/whyun-android/witv/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/whyun-android/witv/releases/tag/v1.0.0

@@ -16,6 +16,7 @@ import org.robolectric.shadows.ShadowLooper;
 
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.exoplayer.source.BehindLiveWindowException;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -405,6 +406,37 @@ public class PlayerManagerTest {
 
         assertEquals(1, playerManager.getCurrentSourceIndex());
         assertEquals(1, callback.sourceSwitchingCount);
+    }
+
+    // ============================================================
+    // Behind live window (HLS): error classification
+    // ============================================================
+
+    @Test
+    public void isBehindLiveWindowError_trueWhenErrorCodeSet() {
+        PlaybackException e = new PlaybackException(
+                "Source error",
+                new RuntimeException("wrapper"),
+                PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW);
+        assertTrue(PlayerManager.isBehindLiveWindowError(e));
+    }
+
+    @Test
+    public void isBehindLiveWindowError_trueWhenCauseIsBehindLiveWindow() {
+        PlaybackException e = new PlaybackException(
+                "Source error",
+                new BehindLiveWindowException(),
+                PlaybackException.ERROR_CODE_IO_UNSPECIFIED);
+        assertTrue(PlayerManager.isBehindLiveWindowError(e));
+    }
+
+    @Test
+    public void isBehindLiveWindowError_falseForUnrelatedErrors() {
+        PlaybackException e = new PlaybackException(
+                "network",
+                null,
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED);
+        assertFalse(PlayerManager.isBehindLiveWindowError(e));
     }
 
     // ============================================================

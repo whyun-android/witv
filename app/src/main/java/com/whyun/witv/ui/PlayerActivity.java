@@ -247,14 +247,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         MediaInfoFormatter.MediaInfoColumns cols = MediaInfoFormatter.buildTwoColumns(exo,
                 getString(R.string.media_info_resolution),
                 getString(R.string.media_info_video_codec),
-                getString(R.string.media_info_video_bitrate),
-                getString(R.string.media_info_frame_rate),
                 getString(R.string.media_info_audio_codec),
-                getString(R.string.media_info_audio_bitrate),
                 getString(R.string.media_info_sample_rate),
                 getString(R.string.media_info_channels),
-                waiting,
-                getString(R.string.media_info_not_provided));
+                waiting);
         if (cols.videoColumn.isEmpty() && cols.audioColumn.isEmpty()) {
             mediaInfoVideoColumn.setText("");
             mediaInfoAudioColumn.setText("");
@@ -518,6 +514,20 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             }
             if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_F6) {
                 hideSettingsPanel();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP
+                    || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                    || keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                    || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                    || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                    || keyCode == KeyEvent.KEYCODE_ENTER) {
+                SettingsCollapsibleFragment navFragment =
+                        (SettingsCollapsibleFragment) getSupportFragmentManager()
+                                .findFragmentByTag("settings_drawer");
+                if (navFragment != null) {
+                    navFragment.dispatchDrawerKey(keyCode, event);
+                }
                 return true;
             }
         }

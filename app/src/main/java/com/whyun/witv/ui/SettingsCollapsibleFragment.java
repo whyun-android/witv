@@ -6,6 +6,9 @@ import android.content.pm.PackageManager;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
+import android.app.Activity;
+import android.view.FocusFinder;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -151,6 +154,77 @@ public class SettingsCollapsibleFragment extends Fragment
         if (openCategory != 0 && submenuContainer.getVisibility() == View.VISIBLE) {
             closeSubmenu();
             return true;
+        }
+        return false;
+    }
+
+    /**
+     * 设置抽屉打开时由 {@link PlayerActivity} 转发方向键与确认键，避免仍触发换台、打开频道列表等。
+     */
+    public void dispatchDrawerKey(int keyCode, KeyEvent event) {
+        if (event.getAction() != KeyEvent.ACTION_DOWN) {
+            return;
+        }
+        Activity act = getActivity();
+        if (act == null || !isAdded()) {
+            return;
+        }
+        View panel = act.findViewById(R.id.settings_panel_content);
+        View fragmentRoot = getView();
+        if (panel == null || fragmentRoot == null) {
+            return;
+        }
+
+        View focused = act.getCurrentFocus();
+        if (!isDescendant(panel, focused)) {
+            refreshAndFocus();
+            return;
+        }
+
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            focused.dispatchKeyEvent(event);
+            return;
+        }
+
+        int direction = keyCodeToFocusDirection(keyCode);
+        if (direction == 0) {
+            return;
+        }
+        View next = FocusFinder.getInstance().findNextFocus((ViewGroup) panel, focused, direction);
+        if (next != null) {
+            next.requestFocus();
+        }
+    }
+
+    private static int keyCodeToFocusDirection(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_UP:
+                return View.FOCUS_UP;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                return View.FOCUS_DOWN;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                return View.FOCUS_LEFT;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                return View.FOCUS_RIGHT;
+            default:
+                return 0;
+        }
+    }
+
+    private static boolean isDescendant(View ancestor, View descendant) {
+        if (ancestor == null || descendant == null) {
+            return false;
+        }
+        View v = descendant;
+        while (v != null) {
+            if (v == ancestor) {
+                return true;
+            }
+            Object parent = v.getParent();
+            if (!(parent instanceof View)) {
+                break;
+            }
+            v = (View) parent;
         }
         return false;
     }

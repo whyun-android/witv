@@ -239,7 +239,8 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="#99000000"
-            android:focusable="true" />
+            android:clickable="true"
+            android:focusable="false" />
 
         <FrameLayout
             android:id="@+id/settings_panel_content"
