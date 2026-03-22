@@ -2,7 +2,6 @@ package com.whyun.witv.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
@@ -25,6 +24,7 @@ import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.whyun.witv.BuildConfig;
 import com.whyun.witv.R;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
@@ -34,7 +34,9 @@ import com.whyun.witv.data.repository.ChannelRepository;
 import com.whyun.witv.data.repository.EpgRepository;
 import com.whyun.witv.player.PlayerManager;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -48,6 +50,7 @@ public class SettingsCollapsibleFragment extends Fragment
     public static final int CAT_EPG = 3;
     public static final int CAT_PLAYBACK = 4;
     public static final int CAT_HELP = 5;
+    public static final int CAT_SOURCE_TIMEOUT = 6;
 
     private SettingsPanelHost host;
 
@@ -186,6 +189,17 @@ public class SettingsCollapsibleFragment extends Fragment
             return;
         }
 
+        // 左侧子菜单在 RecyclerView 刷新后 FocusFinder 往往找不到右侧主菜单；显式把焦点交给父级菜单
+        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                && openCategory != 0
+                && submenuContainer != null
+                && submenuContainer.getVisibility() == View.VISIBLE
+                && focused != null
+                && isDescendant(submenuContainer, focused)) {
+            focusMainMenuAtCategory(lastOpenedCategory);
+            return;
+        }
+
         int direction = keyCodeToFocusDirection(keyCode);
         if (direction == 0) {
             return;
@@ -308,17 +322,21 @@ public class SettingsCollapsibleFragment extends Fragment
         Context ctx = requireContext();
         List<SettingsMainMenuAdapter.Item> items = new ArrayList<>();
         items.add(new SettingsMainMenuAdapter.Item(CAT_ADDRESS,
-                ctx.getString(R.string.settings_group_address), true));
+                ctx.getString(R.string.settings_group_address)));
         if (host.shouldShowStreamSwitchGroup()) {
             items.add(new SettingsMainMenuAdapter.Item(CAT_SWITCH,
-                    ctx.getString(R.string.settings_group_switch_stream), true));
+                    ctx.getString(R.string.settings_group_switch_stream)));
+        }
+        if (host.shouldShowSourceTimeoutGroup()) {
+            items.add(new SettingsMainMenuAdapter.Item(CAT_SOURCE_TIMEOUT,
+                    ctx.getString(R.string.settings_group_source_timeout)));
         }
         items.add(new SettingsMainMenuAdapter.Item(CAT_EPG,
-                ctx.getString(R.string.settings_group_epg), true));
+                ctx.getString(R.string.settings_group_epg)));
         items.add(new SettingsMainMenuAdapter.Item(CAT_PLAYBACK,
-                ctx.getString(R.string.settings_group_playback), true));
+                ctx.getString(R.string.settings_group_playback)));
         items.add(new SettingsMainMenuAdapter.Item(CAT_HELP,
-                ctx.getString(R.string.settings_help_title), false));
+                ctx.getString(R.string.settings_help_title)));
         mainMenuAdapter.setItems(items);
     }
 
@@ -328,7 +346,10 @@ public class SettingsCollapsibleFragment extends Fragment
         }
     }
 
-    private void openSubmenu(int category) {
+    /**
+     * @param moveFocusToFirstSubItem true：确认键进入子菜单时把焦点移到左侧首项；false：仅焦点路过父项时展开，焦点留在右侧父菜单
+     */
+    private void openSubmenu(int category, boolean moveFocusToFirstSubItem) {
         lastOpenedCategory = category;
         openCategory = category;
         submenuContainer.setVisibility(View.VISIBLE);
@@ -336,13 +357,15 @@ public class SettingsCollapsibleFragment extends Fragment
         submenuAdapter.setRows(buildSubmenuRows(category));
         submenuRecycler.post(() -> {
             submenuRecycler.scrollToPosition(0);
-            submenuRecycler.post(() -> {
-                if (submenuRecycler.getChildCount() > 0) {
-                    submenuRecycler.getChildAt(0).requestFocus();
-                } else {
-                    submenuRecycler.requestFocus();
-                }
-            });
+            if (moveFocusToFirstSubItem) {
+                submenuRecycler.post(() -> {
+                    if (submenuRecycler.getChildCount() > 0) {
+                        submenuRecycler.getChildAt(0).requestFocus();
+                    } else {
+                        submenuRecycler.requestFocus();
+                    }
+                });
+            }
         });
     }
 
@@ -350,14 +373,31 @@ public class SettingsCollapsibleFragment extends Fragment
         openCategory = 0;
         submenuContainer.setVisibility(View.GONE);
         applyMainMenuLayoutParams(false);
-        int pos = mainMenuAdapter.positionOfCategory(lastOpenedCategory);
+        focusMainMenuAtCategory(lastOpenedCategory);
+    }
+
+    /**
+     * 将焦点移到右侧主菜单中指定分类一行（子菜单仍打开时用于「右键回父菜单」）。
+     */
+    private void focusMainMenuAtCategory(int categoryId) {
+        if (mainMenuAdapter == null || mainMenuRecycler == null) {
+            return;
+        }
+        int pos = mainMenuAdapter.positionOfCategory(categoryId);
         mainMenuRecycler.scrollToPosition(pos);
         mainMenuRecycler.post(() -> {
             RecyclerView.ViewHolder vh = mainMenuRecycler.findViewHolderForAdapterPosition(pos);
             if (vh != null) {
                 vh.itemView.requestFocus();
             } else {
-                mainMenuRecycler.requestFocus();
+                mainMenuRecycler.post(() -> {
+                    RecyclerView.ViewHolder vh2 = mainMenuRecycler.findViewHolderForAdapterPosition(pos);
+                    if (vh2 != null) {
+                        vh2.itemView.requestFocus();
+                    } else {
+                        mainMenuRecycler.requestFocus();
+                    }
+                });
             }
         });
     }
@@ -413,6 +453,13 @@ public class SettingsCollapsibleFragment extends Fragment
                     }
                 }
                 break;
+            case CAT_SOURCE_TIMEOUT:
+                long curMs = preferenceManager.getSourceSwitchTimeoutMs();
+                for (int sec : PreferenceManager.getAllowedSourceTimeoutSeconds()) {
+                    long ms = sec * 1000L;
+                    rows.add(new SettingsPanelAdapter.SourceTimeoutRow(sec, ms == curMs));
+                }
+                break;
             case CAT_EPG:
                 rows.add(new SettingsPanelAdapter.EpgRow(cachedEpgUrl));
                 break;
@@ -424,6 +471,23 @@ public class SettingsCollapsibleFragment extends Fragment
                         preferenceManager.isShowLoadSpeedOverlay(),
                         ctx.getString(R.string.show_load_speed_overlay),
                         ctx.getString(R.string.show_load_speed_overlay_hint)));
+                rows.add(new SettingsPanelAdapter.CheckRow(SettingsPanelAdapter.CheckRow.Kind.REVERSE_CHANNEL_KEYS,
+                        preferenceManager.isReverseChannelKeysEnabled(),
+                        ctx.getString(R.string.reverse_channel_keys),
+                        ctx.getString(R.string.reverse_channel_keys_hint)));
+                break;
+            case CAT_HELP:
+                if (host.shouldShowPlaybackMediaInfoHelp()) {
+                    rows.add(new SettingsPanelAdapter.HelpSubRow(
+                            SettingsPanelAdapter.HelpSubRow.Kind.MEDIA_INFO,
+                            ctx.getString(R.string.settings_help_sub_media_info)));
+                }
+                rows.add(new SettingsPanelAdapter.HelpSubRow(
+                        SettingsPanelAdapter.HelpSubRow.Kind.HELP_GUIDE,
+                        ctx.getString(R.string.settings_help_sub_guide)));
+                rows.add(new SettingsPanelAdapter.HelpSubRow(
+                        SettingsPanelAdapter.HelpSubRow.Kind.ABOUT_APP,
+                        ctx.getString(R.string.settings_help_sub_about)));
                 break;
             default:
                 break;
@@ -433,14 +497,6 @@ public class SettingsCollapsibleFragment extends Fragment
 
     private static String buildWebHint(Context ctx) {
         return String.format(Locale.US, "通过浏览器管理：http://%s:9978", getDeviceIp(ctx));
-    }
-
-    private static String getAppVersionName(Context ctx) {
-        try {
-            return ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0).versionName;
-        } catch (PackageManager.NameNotFoundException e) {
-            return "?";
-        }
     }
 
     private static String getDeviceIp(Context context) {
@@ -463,34 +519,26 @@ public class SettingsCollapsibleFragment extends Fragment
 
     @Override
     public void onMainMenuItemClick(int categoryId) {
-        if (categoryId == CAT_HELP) {
-            showHelpDialog();
-            return;
-        }
         if (openCategory == categoryId && submenuContainer.getVisibility() == View.VISIBLE) {
             return;
         }
-        openSubmenu(categoryId);
+        openSubmenu(categoryId, true);
+    }
+
+    @Override
+    public void onMainMenuItemFocused(int categoryId) {
+        if (openCategory == categoryId && submenuContainer.getVisibility() == View.VISIBLE) {
+            rebuildSubmenuIfOpen();
+            return;
+        }
+        openSubmenu(categoryId, false);
     }
 
     private void showHelpDialog() {
         Context ctx = requireContext();
         float density = ctx.getResources().getDisplayMetrics().density;
         int pad = (int) (16 * density);
-        int gapAfterVersion = (int) (10 * density);
-        int scrollMaxH = (int) (280 * density);
-
-        LinearLayout outer = new LinearLayout(ctx);
-        outer.setOrientation(LinearLayout.VERTICAL);
-        outer.setPadding(pad, pad, pad, pad);
-        outer.setBackgroundColor(ContextCompat.getColor(ctx, R.color.card_bg));
-
-        TextView verLine = new TextView(ctx);
-        verLine.setText(getString(R.string.settings_help_version_line, getAppVersionName(ctx)));
-        verLine.setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary));
-        verLine.setTextSize(14);
-        outer.addView(verLine, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        int scrollMaxH = (int) (320 * density);
 
         ScrollView scrollView = new ScrollView(ctx);
         scrollView.setLayoutParams(new LinearLayout.LayoutParams(
@@ -500,14 +548,31 @@ public class SettingsCollapsibleFragment extends Fragment
         body.setText(R.string.settings_help_body);
         body.setTextColor(ContextCompat.getColor(ctx, R.color.text_primary));
         body.setTextSize(15);
-        body.setPadding(0, gapAfterVersion, 0, 0);
+        body.setPadding(pad, pad, pad, pad);
         body.setLineSpacing(0, 1.35f);
         scrollView.addView(body);
+
+        LinearLayout outer = new LinearLayout(ctx);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(ContextCompat.getColor(ctx, R.color.card_bg));
         outer.addView(scrollView);
 
         new AlertDialog.Builder(ctx)
-                .setTitle(R.string.settings_help_title)
+                .setTitle(R.string.settings_help_sub_guide)
                 .setView(outer)
+                .setPositiveButton(android.R.string.ok, (d, w) -> d.dismiss())
+                .show();
+    }
+
+    private void showAboutDialog() {
+        Context ctx = requireContext();
+        String ver = BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")";
+        SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+        String built = df.format(new Date(BuildConfig.BUILD_TIME_MILLIS));
+        String body = getString(R.string.about_app_body_format, ver, built, ctx.getPackageName());
+        new AlertDialog.Builder(ctx)
+                .setTitle(R.string.about_app_title)
+                .setMessage(body)
                 .setPositiveButton(android.R.string.ok, (d, w) -> d.dismiss())
                 .show();
     }
@@ -600,5 +665,38 @@ public class SettingsCollapsibleFragment extends Fragment
                 checked ? "已开启播放页加载速度显示" : "已关闭播放页加载速度显示",
                 Toast.LENGTH_SHORT).show();
         host.onPlaybackOverlayPreferenceChanged();
+    }
+
+    @Override
+    public void onReverseChannelKeys(boolean checked) {
+        preferenceManager.setReverseChannelKeys(checked);
+        Toast.makeText(requireContext(),
+                checked ? "已开启反转换台键" : "已关闭反转换台键",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onSourceTimeoutSeconds(int seconds) {
+        preferenceManager.setSourceSwitchTimeoutMs(seconds * 1000L);
+        Toast.makeText(requireContext(),
+                getString(R.string.source_timeout_saved, seconds),
+                Toast.LENGTH_SHORT).show();
+        host.onSourceSwitchTimeoutChanged();
+        rebuildSubmenuIfOpen();
+    }
+
+    @Override
+    public void onHelpSubmenuClick(SettingsPanelAdapter.HelpSubRow.Kind kind) {
+        switch (kind) {
+            case MEDIA_INFO:
+                host.showPlaybackMediaInfoDialog();
+                break;
+            case HELP_GUIDE:
+                showHelpDialog();
+                break;
+            case ABOUT_APP:
+                showAboutDialog();
+                break;
+        }
     }
 }

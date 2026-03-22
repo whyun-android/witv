@@ -31,6 +31,8 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
     static final int VT_EPG = 3;
     static final int VT_CHECK = 4;
     static final int VT_EMPTY_HINT = 5;
+    static final int VT_HELP_SUB = 6;
+    static final int VT_SOURCE_TIMEOUT = 7;
 
     public abstract static class Row {
         abstract int viewType();
@@ -79,6 +81,21 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         }
     }
 
+    public static final class SourceTimeoutRow extends Row {
+        public final int seconds;
+        public final boolean selected;
+
+        public SourceTimeoutRow(int seconds, boolean selected) {
+            this.seconds = seconds;
+            this.selected = selected;
+        }
+
+        @Override
+        int viewType() {
+            return VT_SOURCE_TIMEOUT;
+        }
+    }
+
     public static final class EpgRow extends Row {
         final String epgUrl;
 
@@ -94,7 +111,7 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
 
     public static final class CheckRow extends Row {
         enum Kind {
-            AUTO_PLAY, LOAD_SPEED
+            AUTO_PLAY, LOAD_SPEED, REVERSE_CHANNEL_KEYS
         }
 
         final Kind kind;
@@ -128,6 +145,25 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         }
     }
 
+    public static final class HelpSubRow extends Row {
+        public enum Kind {
+            MEDIA_INFO, HELP_GUIDE, ABOUT_APP
+        }
+
+        public final Kind kind;
+        public final String title;
+
+        public HelpSubRow(Kind kind, String title) {
+            this.kind = kind;
+            this.title = title;
+        }
+
+        @Override
+        int viewType() {
+            return VT_HELP_SUB;
+        }
+    }
+
     public interface Listener {
         void onActivateM3U(M3USource source);
 
@@ -140,6 +176,12 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         void onAutoPlay(boolean checked);
 
         void onLoadSpeed(boolean checked);
+
+        void onReverseChannelKeys(boolean checked);
+
+        void onHelpSubmenuClick(HelpSubRow.Kind kind);
+
+        void onSourceTimeoutSeconds(int seconds);
     }
 
     private List<Row> rows = Collections.emptyList();
@@ -170,11 +212,14 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
             case VT_M3U:
                 return new M3UVH(inf.inflate(R.layout.item_source, parent, false));
             case VT_STREAM:
+            case VT_SOURCE_TIMEOUT:
                 return new StreamVH(inf.inflate(R.layout.item_settings_stream_row, parent, false));
             case VT_EPG:
                 return new EpgVH(inf.inflate(R.layout.item_settings_epg, parent, false));
             case VT_CHECK:
                 return new CheckVH(inf.inflate(R.layout.item_settings_check, parent, false));
+            case VT_HELP_SUB:
+                return new HelpSubVH(inf.inflate(R.layout.item_settings_help_sub_row, parent, false));
             default:
                 throw new IllegalArgumentException("viewType " + viewType);
         }
@@ -194,12 +239,17 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         } else if (holder instanceof M3UVH) {
             ((M3UVH) holder).bind(((M3USourceRow) row).source, listener);
         } else if (holder instanceof StreamVH) {
-            StreamRow sr = (StreamRow) row;
-            ((StreamVH) holder).bind(sr, listener);
+            if (row instanceof StreamRow) {
+                ((StreamVH) holder).bind((StreamRow) row, listener);
+            } else {
+                ((StreamVH) holder).bind((SourceTimeoutRow) row, listener);
+            }
         } else if (holder instanceof EpgVH) {
             ((EpgVH) holder).bind(((EpgRow) row).epgUrl, listener);
         } else if (holder instanceof CheckVH) {
             ((CheckVH) holder).bind((CheckRow) row, listener);
+        } else if (holder instanceof HelpSubVH) {
+            ((HelpSubVH) holder).bind((HelpSubRow) row, listener);
         }
     }
 
@@ -278,6 +328,23 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
                 return false;
             });
         }
+
+        void bind(SourceTimeoutRow row, Listener listener) {
+            label.setText(itemView.getContext().getString(R.string.source_timeout_seconds_format, row.seconds));
+            url.setVisibility(View.GONE);
+            currentBadge.setVisibility(row.selected ? View.VISIBLE : View.GONE);
+            itemView.setOnClickListener(v -> listener.onSourceTimeoutSeconds(row.seconds));
+            itemView.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                    return false;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                    listener.onSourceTimeoutSeconds(row.seconds);
+                    return true;
+                }
+                return false;
+            });
+        }
     }
 
     static final class EpgVH extends RecyclerView.ViewHolder {
@@ -322,11 +389,39 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
                 hint.setVisibility(View.GONE);
             }
             check.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                if (row.kind == CheckRow.Kind.AUTO_PLAY) {
-                    listener.onAutoPlay(isChecked);
-                } else {
-                    listener.onLoadSpeed(isChecked);
+                switch (row.kind) {
+                    case AUTO_PLAY:
+                        listener.onAutoPlay(isChecked);
+                        break;
+                    case LOAD_SPEED:
+                        listener.onLoadSpeed(isChecked);
+                        break;
+                    case REVERSE_CHANNEL_KEYS:
+                        listener.onReverseChannelKeys(isChecked);
+                        break;
                 }
+            });
+        }
+    }
+
+    static final class HelpSubVH extends RecyclerView.ViewHolder {
+
+        HelpSubVH(@NonNull View itemView) {
+            super(itemView);
+        }
+
+        void bind(HelpSubRow row, Listener listener) {
+            ((TextView) itemView).setText(row.title);
+            itemView.setOnClickListener(v -> listener.onHelpSubmenuClick(row.kind));
+            itemView.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                    return false;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                    listener.onHelpSubmenuClick(row.kind);
+                    return true;
+                }
+                return false;
             });
         }
     }

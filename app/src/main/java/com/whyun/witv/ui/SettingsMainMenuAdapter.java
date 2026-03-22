@@ -21,18 +21,17 @@ public class SettingsMainMenuAdapter extends RecyclerView.Adapter<SettingsMainMe
 
     public interface Listener {
         void onMainMenuItemClick(int categoryId);
+
+        void onMainMenuItemFocused(int categoryId);
     }
 
     public static final class Item {
         final int categoryId;
         final String title;
-        /** When true, show ‹ (submenu opens on the left). When false (e.g. help), hide. */
-        final boolean showSubmenuChevron;
 
-        public Item(int categoryId, String title, boolean showSubmenuChevron) {
+        public Item(int categoryId, String title) {
             this.categoryId = categoryId;
             this.title = title;
-            this.showSubmenuChevron = showSubmenuChevron;
         }
     }
 
@@ -63,8 +62,12 @@ public class SettingsMainMenuAdapter extends RecyclerView.Adapter<SettingsMainMe
     public void onBindViewHolder(@NonNull VH holder, int position) {
         Item item = items.get(position);
         holder.title.setText(item.title);
-        holder.chevron.setVisibility(item.showSubmenuChevron ? View.VISIBLE : View.GONE);
         holder.itemView.setOnClickListener(v -> listener.onMainMenuItemClick(item.categoryId));
+        holder.itemView.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                listener.onMainMenuItemFocused(item.categoryId);
+            }
+        });
         holder.itemView.setOnKeyListener((v, keyCode, event) -> {
             if (event.getAction() != KeyEvent.ACTION_DOWN) {
                 return false;
@@ -94,12 +97,10 @@ public class SettingsMainMenuAdapter extends RecyclerView.Adapter<SettingsMainMe
 
     static final class VH extends RecyclerView.ViewHolder {
         final TextView title;
-        final TextView chevron;
 
         VH(@NonNull View itemView) {
             super(itemView);
             title = itemView.findViewById(R.id.main_menu_title);
-            chevron = itemView.findViewById(R.id.submenu_indicator);
         }
     }
 }

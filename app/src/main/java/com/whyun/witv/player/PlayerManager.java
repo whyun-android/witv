@@ -7,6 +7,7 @@ import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -24,6 +25,7 @@ import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.ui.PlayerView;
 
 import com.whyun.witv.WiTVApp;
+import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.entity.ChannelSource;
 
 import java.util.ArrayList;
@@ -40,8 +42,6 @@ public class PlayerManager {
         void onPlaybackStarted(int sourceIndex, int total);
         void onError(String message);
     }
-
-    private static final long SOURCE_TIMEOUT_MS = 15_000;
 
     /**
      * 直播 HLS：目标离 live edge 更远，延迟略增但更不易掉出滑动窗口。
@@ -85,19 +85,6 @@ public class PlayerManager {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable timeoutRunnable;
-
-    private Runnable createTimeoutRunnable(int generation) {
-        return () -> {
-            if (generation != playGeneration) return;
-            if (player != null && !player.isPlaying()) {
-                int state = player.getPlaybackState();
-                String stateName = playbackStateName(state);
-                switchToNextSource(String.format(Locale.US,
-                        "source_timeout: %d ms without playing (playbackState=%s, playWhenReady=%s)",
-                        SOURCE_TIMEOUT_MS, stateName, player.getPlayWhenReady()));
-            }
-        };
-    }
 
     private static String playbackStateName(int state) {
         switch (state) {
@@ -195,8 +182,10 @@ public class PlayerManager {
                 .setConnectTimeoutMs(HTTP_CONNECT_TIMEOUT_MS)
                 .setReadTimeoutMs(HTTP_READ_TIMEOUT_MS)
                 .setUserAgent(HTTP_USER_AGENT);
-        DefaultDataSource.Factory dataSourceFactory =
+        DefaultDataSource.Factory innerDataSourceFactory =
                 new DefaultDataSource.Factory(context, httpDataSourceFactory);
+        DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context,
+                new M3u8RewritingDataSource.Factory(innerDataSourceFactory));
         DefaultMediaSourceFactory mediaSourceFactory =
                 new DefaultMediaSourceFactory(dataSourceFactory);
 
@@ -323,8 +312,29 @@ public class PlayerManager {
 
     private void startTimeout() {
         cancelTimeout();
-        timeoutRunnable = createTimeoutRunnable(playGeneration);
-        handler.postDelayed(timeoutRunnable, SOURCE_TIMEOUT_MS);
+        long timeoutMs = new PreferenceManager(context).getSourceSwitchTimeoutMs();
+        final int generation = playGeneration;
+        timeoutRunnable = () -> {
+            if (generation != playGeneration) {
+                return;
+            }
+            if (player != null && !player.isPlaying()) {
+                int state = player.getPlaybackState();
+                String stateName = playbackStateName(state);
+                switchToNextSource(String.format(Locale.US,
+                        "source_timeout: %d ms without playing (playbackState=%s, playWhenReady=%s)",
+                        timeoutMs, stateName, player.getPlayWhenReady()));
+            }
+        };
+        handler.postDelayed(timeoutRunnable, timeoutMs);
+    }
+
+    /** 设置中修改「超时换源」后调用，按新时长重新计时（若当前仍在等待起播）。 */
+    public void rescheduleSourceTimeoutFromPreferences() {
+        if (player == null || currentSources == null || currentSources.isEmpty()) {
+            return;
+        }
+        startTimeout();
     }
 
     private void cancelTimeout() {
@@ -343,6 +353,18 @@ public class PlayerManager {
 
     public int getSourceCount() {
         return currentSources.size();
+    }
+
+    /** 当前正在尝试播放的线路地址；无有效线路时为 null。 */
+    @Nullable
+    public String getCurrentPlaybackUrl() {
+        if (currentSources == null || currentSources.isEmpty()) {
+            return null;
+        }
+        if (currentSourceIndex < 0 || currentSourceIndex >= currentSources.size()) {
+            return null;
+        }
+        return currentSources.get(currentSourceIndex).url;
     }
 
     public void pause() {

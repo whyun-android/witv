@@ -216,14 +216,57 @@
         android:textSize="18sp"
         android:visibility="gone" />
 
-    <!-- Channel list overlay (left side) -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/channel_list_overlay"
-        android:layout_width="320dp"
+    <!-- Channel list + EPG preview (two columns) -->
+    <LinearLayout
+        android:id="@+id/channel_list_panel"
+        android:layout_width="620dp"
         android:layout_height="match_parent"
-        android:background="@color/channel_list_bg"
-        android:padding="8dp"
-        android:visibility="gone" />
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/channel_list_overlay"
+            android:layout_width="300dp"
+            android:layout_height="match_parent"
+            android:background="@color/channel_list_bg"
+            android:clipToPadding="false"
+            android:padding="8dp" />
+
+        <ScrollView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="#E6101820"
+            android:fillViewport="true"
+            android:scrollbars="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="14dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="20dp">
+
+                <TextView
+                    android:id="@+id/channel_list_epg_channel_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/channel_list_epg_content"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:lineSpacingMultiplier="1.25"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
 
     <!-- Settings: right drawer over player -->
     <LinearLayout

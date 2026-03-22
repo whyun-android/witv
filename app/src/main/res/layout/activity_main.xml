@@ -46,6 +46,16 @@
             android:textColor="@color/accent"
             android:textSize="24sp" />
 
+        <Button
+            android:id="@+id/btn_refresh_web_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:minHeight="48dp"
+            android:text="@string/refresh_web_address" />
+
     </LinearLayout>
 
     <!-- Loading indicator -->
@@ -55,5 +65,34 @@
         android:layout_height="48dp"
         android:layout_gravity="center"
         android:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/settings_panel_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/settings_scrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#99000000"
+            android:clickable="true"
+            android:focusable="false" />
+
+        <FrameLayout
+            android:id="@+id/settings_panel_content"
+            android:layout_width="480dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:layout_marginStart="24dp"
+            android:layout_marginEnd="24dp"
+            android:layout_marginBottom="24dp"
+            android:background="#0F1923"
+            android:clickable="true"
+            android:focusable="true"
+            android:maxHeight="560dp"
+            android:minHeight="120dp" />
+    </FrameLayout>
 
 </FrameLayout>

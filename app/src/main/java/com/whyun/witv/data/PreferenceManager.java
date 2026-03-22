@@ -12,6 +12,14 @@ public class PreferenceManager {
     private static final String KEY_LAST_PLAY_STREAM_INDEX = "last_play_stream_index";
     private static final String KEY_AUTO_PLAY_LAST = "auto_play_last";
     private static final String KEY_SHOW_LOAD_SPEED_OVERLAY = "show_load_speed_overlay";
+    private static final String KEY_REVERSE_CHANNEL_KEYS = "reverse_channel_keys";
+    private static final String KEY_SOURCE_SWITCH_TIMEOUT_MS = "source_switch_timeout_ms";
+
+    /** 单线路超时未起播则换源；可选值见 {@link #normalizeSourceSwitchTimeoutMs(long)} */
+    public static final long DEFAULT_SOURCE_SWITCH_TIMEOUT_MS = 15_000L;
+    private static final long[] ALLOWED_SOURCE_TIMEOUTS_MS = {
+            5_000L, 10_000L, 15_000L, 20_000L, 25_000L, 30_000L
+    };
     private static final String KEY_LAST_EPG_AUTO_REFRESH_AT = "last_epg_auto_refresh_at";
     private static final String KEY_LAST_EPG_AUTO_REFRESH_URL = "last_epg_auto_refresh_url";
 
@@ -73,6 +81,37 @@ public class PreferenceManager {
 
     public boolean isShowLoadSpeedOverlay() {
         return prefs.getBoolean(KEY_SHOW_LOAD_SPEED_OVERLAY, false);
+    }
+
+    /** 上/下键换台方向与默认相反 */
+    public void setReverseChannelKeys(boolean enabled) {
+        prefs.edit().putBoolean(KEY_REVERSE_CHANNEL_KEYS, enabled).apply();
+    }
+
+    public boolean isReverseChannelKeysEnabled() {
+        return prefs.getBoolean(KEY_REVERSE_CHANNEL_KEYS, false);
+    }
+
+    public long getSourceSwitchTimeoutMs() {
+        long v = prefs.getLong(KEY_SOURCE_SWITCH_TIMEOUT_MS, DEFAULT_SOURCE_SWITCH_TIMEOUT_MS);
+        return normalizeSourceSwitchTimeoutMs(v);
+    }
+
+    public void setSourceSwitchTimeoutMs(long ms) {
+        prefs.edit().putLong(KEY_SOURCE_SWITCH_TIMEOUT_MS, normalizeSourceSwitchTimeoutMs(ms)).apply();
+    }
+
+    public static long normalizeSourceSwitchTimeoutMs(long ms) {
+        for (long a : ALLOWED_SOURCE_TIMEOUTS_MS) {
+            if (a == ms) {
+                return ms;
+            }
+        }
+        return DEFAULT_SOURCE_SWITCH_TIMEOUT_MS;
+    }
+
+    public static int[] getAllowedSourceTimeoutSeconds() {
+        return new int[]{5, 10, 15, 20, 25, 30};
     }
 
     public void clearLastChannel() {

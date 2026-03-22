@@ -6,12 +6,18 @@ android {
     namespace 'com.whyun.witv'
     compileSdk 36
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId "com.whyun.witv"
-        minSdk 21
+        // Media3 1.9+ 与 AndroidX 对齐，要求 minSdk 23
+        minSdk 23
         targetSdk 34
-        versionCode 3
-        versionName "1.0.2"
+        versionCode 4
+        versionName "1.1.0"
+        buildConfigField "long", "BUILD_TIME_MILLIS", "${System.currentTimeMillis()}L"
     }
 
     buildTypes {
@@ -28,17 +34,19 @@ android {
 }
 
 dependencies {
+    def media3_version = "1.10.0-rc01"
+
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.robolectric:robolectric:4.14.1"
     testImplementation "androidx.test:core:1.6.1"
 
-    // Media3 ExoPlayer
-    implementation "androidx.media3:media3-exoplayer:1.5.1"
-    implementation "androidx.media3:media3-exoplayer-hls:1.5.1"
-    implementation "androidx.media3:media3-exoplayer-dash:1.5.1"
-    implementation "androidx.media3:media3-ui:1.5.1"
-    implementation "androidx.media3:media3-session:1.5.1"
-    implementation "androidx.media3:media3-common:1.5.1"
+    // Media3 ExoPlayer（RC，升级后请在目标盒子上做播放回归）
+    implementation "androidx.media3:media3-exoplayer:$media3_version"
+    implementation "androidx.media3:media3-exoplayer-hls:$media3_version"
+    implementation "androidx.media3:media3-exoplayer-dash:$media3_version"
+    implementation "androidx.media3:media3-ui:$media3_version"
+    implementation "androidx.media3:media3-session:$media3_version"
+    implementation "androidx.media3:media3-common:$media3_version"
 
     // Leanback TV
     implementation "androidx.leanback:leanback:1.2.0-alpha04"

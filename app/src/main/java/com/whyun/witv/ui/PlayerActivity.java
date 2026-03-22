@@ -1,13 +1,24 @@
 package com.whyun.witv.ui;
 
+import android.app.AlertDialog;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
+
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 import androidx.media3.common.Player;
 import androidx.media3.common.Tracks;
@@ -59,7 +70,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private TextView mediaInfoAudioColumn;
     private TextView switchingToast;
     private TextView loadSpeedOverlay;
+    private View channelListPanel;
     private RecyclerView channelListOverlay;
+    private TextView channelListEpgChannelName;
+    private TextView channelListEpgContent;
+    private int channelListEpgLoadSeq = 0;
     private View settingsPanelOverlay;
     private PlayerView playerView;
 
@@ -77,6 +92,13 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private boolean overlayVisible = false;
     private final Runnable hideOverlayRunnable = () -> hideOverlay();
+
+    private static final long CHANNEL_LIST_HIDE_IDLE_MS = 10_000L;
+    private final Runnable hideChannelListIdleRunnable = () -> {
+        if (channelListPanel != null) {
+            channelListPanel.setVisibility(View.GONE);
+        }
+    };
 
     private final Runnable loadSpeedRefreshRunnable = new Runnable() {
         @Override
@@ -149,7 +171,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         mediaInfoAudioColumn = findViewById(R.id.media_info_audio_column);
         switchingToast = findViewById(R.id.switching_toast);
         loadSpeedOverlay = findViewById(R.id.load_speed_overlay);
+        channelListPanel = findViewById(R.id.channel_list_panel);
         channelListOverlay = findViewById(R.id.channel_list_overlay);
+        channelListEpgChannelName = findViewById(R.id.channel_list_epg_channel_name);
+        channelListEpgContent = findViewById(R.id.channel_list_epg_content);
         channelListOverlay.setLayoutManager(new LinearLayoutManager(this));
 
         settingsPanelOverlay = findViewById(R.id.settings_panel_overlay);
@@ -346,6 +371,37 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         });
     }
 
+    /** 频道列表内长按确认：切换任意行的收藏，并刷新列表心形与当前播放页心形 */
+    private void toggleFavoriteForChannel(Channel channel) {
+        if (channel == null) {
+            return;
+        }
+        executor.execute(() -> {
+            channelRepository.toggleFavorite(channel.id);
+            boolean nowFav = channelRepository.isFavorite(channel.id);
+            Set<Long> favIds = new HashSet<>(channelRepository.getAllFavoriteChannelIds());
+            runOnUiThread(() -> {
+                if (isFinishing()) {
+                    return;
+                }
+                if (channel.id == currentChannelId) {
+                    isFavorite = nowFav;
+                    updateFavoriteIcon();
+                }
+                RecyclerView.Adapter<?> ad = channelListOverlay.getAdapter();
+                if (ad instanceof ChannelListAdapter) {
+                    ((ChannelListAdapter) ad).setFavoriteIds(favIds);
+                }
+                switchingToast.setText(nowFav
+                        ? getString(R.string.added_to_favorites)
+                        : getString(R.string.removed_from_favorites));
+                switchingToast.setVisibility(View.VISIBLE);
+                handler.postDelayed(() -> switchingToast.setVisibility(View.GONE), 2000);
+                scheduleChannelListIdleHide();
+            });
+        });
+    }
+
     private void loadEpgInfo() {
         if (currentChannel == null) {
             currentProgramView.setText(getString(R.string.no_epg));
@@ -399,9 +455,87 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     private void hideOverlay() {
+        cancelChannelListIdleHide();
         epgOverlay.setVisibility(View.GONE);
-        channelListOverlay.setVisibility(View.GONE);
+        if (channelListPanel != null) {
+            channelListPanel.setVisibility(View.GONE);
+        }
         overlayVisible = false;
+    }
+
+    private boolean isChannelListPanelVisible() {
+        return channelListPanel != null && channelListPanel.getVisibility() == View.VISIBLE;
+    }
+
+    private void updateChannelListEpgPanel(Channel ch) {
+        if (ch == null || channelListEpgChannelName == null || channelListEpgContent == null) {
+            return;
+        }
+        channelListEpgChannelName.setText(ch.displayName);
+        boolean hasEpgKey = (ch.tvgId != null && !ch.tvgId.isEmpty())
+                || (ch.tvgName != null && !ch.tvgName.isEmpty());
+        if (!hasEpgKey) {
+            channelListEpgContent.setText(getString(R.string.no_epg));
+            return;
+        }
+        channelListEpgContent.setText(getString(R.string.loading));
+        final int seq = ++channelListEpgLoadSeq;
+        executor.execute(() -> {
+            List<EpgProgram> programs = epgRepository.getUpcomingPrograms(ch.tvgId, ch.tvgName, 12);
+            final CharSequence text = buildChannelListEpgText(programs);
+            runOnUiThread(() -> {
+                if (isFinishing() || channelListEpgContent == null || seq != channelListEpgLoadSeq) {
+                    return;
+                }
+                channelListEpgContent.setText(text);
+            });
+        });
+    }
+
+    /**
+     * 连续节目列表；正在播出的一条用主题色加粗，其余沿用 TextView 默认 secondary 色。
+     */
+    private CharSequence buildChannelListEpgText(List<EpgProgram> programs) {
+        if (programs == null || programs.isEmpty()) {
+            return getString(R.string.no_epg);
+        }
+        long now = System.currentTimeMillis();
+        int highlightColor = ContextCompat.getColor(this, R.color.accent);
+        SpannableStringBuilder ssb = new SpannableStringBuilder();
+        for (int i = 0; i < programs.size(); i++) {
+            EpgProgram p = programs.get(i);
+            String line = timeFormat.format(new Date(p.startTime)) + " - "
+                    + timeFormat.format(new Date(p.endTime)) + "  " + p.title;
+            int start = ssb.length();
+            ssb.append(line);
+            int end = ssb.length();
+            if (now >= p.startTime && now < p.endTime) {
+                ssb.setSpan(new ForegroundColorSpan(highlightColor), start, end,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssb.setSpan(new StyleSpan(Typeface.BOLD), start, end,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (i < programs.size() - 1) {
+                ssb.append('\n');
+            }
+        }
+        return ssb;
+    }
+
+    private void scheduleChannelListIdleHide() {
+        handler.removeCallbacks(hideChannelListIdleRunnable);
+        handler.postDelayed(hideChannelListIdleRunnable, CHANNEL_LIST_HIDE_IDLE_MS);
+    }
+
+    private void cancelChannelListIdleHide() {
+        handler.removeCallbacks(hideChannelListIdleRunnable);
+    }
+
+    private int channelStepForUpDown(int baseStep) {
+        if (preferenceManager != null && preferenceManager.isReverseChannelKeysEnabled()) {
+            return -baseStep;
+        }
+        return baseStep;
     }
 
     private void hideSettingsPanel() {
@@ -445,6 +579,16 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     @Override
+    public boolean shouldShowSourceTimeoutGroup() {
+        return true;
+    }
+
+    @Override
+    public boolean shouldShowPlaybackMediaInfoHelp() {
+        return true;
+    }
+
+    @Override
     public PlayerManager getPlayerManagerOrNull() {
         return playerManager;
     }
@@ -460,6 +604,103 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     public void onPlaybackOverlayPreferenceChanged() {
         applyLoadSpeedOverlayPreference();
         startLoadSpeedRefreshIfNeeded();
+    }
+
+    @Override
+    public void onSourceSwitchTimeoutChanged() {
+        if (playerManager != null) {
+            playerManager.rescheduleSourceTimeoutFromPreferences();
+        }
+    }
+
+    @Override
+    public void showPlaybackMediaInfoDialog() {
+        if (currentChannel == null || playerManager == null) {
+            Toast.makeText(this, R.string.media_info_no_playback, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        executor.execute(() -> {
+            Channel ch = currentChannel;
+            List<EpgProgram> programs = null;
+            if ((ch.tvgId != null && !ch.tvgId.isEmpty())
+                    || (ch.tvgName != null && !ch.tvgName.isEmpty())) {
+                programs = epgRepository.getCurrentAndNext(ch.tvgId, ch.tvgName);
+            }
+            final List<EpgProgram> programsFinal = programs;
+            runOnUiThread(() -> {
+                if (isFinishing()) {
+                    return;
+                }
+                String text = buildPlaybackMediaInfoSummary(programsFinal);
+                showScrollableInfoDialog(R.string.settings_help_sub_media_info, text);
+            });
+        });
+    }
+
+    private void showScrollableInfoDialog(int titleRes, String message) {
+        float density = getResources().getDisplayMetrics().density;
+        int pad = (int) (16 * density);
+        int maxH = (int) (360 * density);
+        ScrollView sv = new ScrollView(this);
+        sv.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, maxH));
+        TextView tv = new TextView(this);
+        tv.setText(message);
+        tv.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        tv.setTextSize(15);
+        tv.setPadding(pad, pad, pad, pad);
+        tv.setLineSpacing(0, 1.35f);
+        sv.addView(tv);
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(ContextCompat.getColor(this, R.color.card_bg));
+        outer.addView(sv);
+        new AlertDialog.Builder(this)
+                .setTitle(titleRes)
+                .setView(outer)
+                .setPositiveButton(android.R.string.ok, (d, w) -> d.dismiss())
+                .show();
+    }
+
+    private String buildPlaybackMediaInfoSummary(List<EpgProgram> programs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("频道：").append(currentChannel.displayName).append('\n');
+        int total = playerManager.getSourceCount();
+        int idx = playerManager.getCurrentSourceIndex();
+        sb.append("当前线路：").append(idx + 1).append(" / ").append(Math.max(total, 1)).append('\n');
+        String url = playerManager.getCurrentPlaybackUrl();
+        sb.append("播放地址：\n").append(url != null ? url : "—").append("\n\n");
+
+        ExoPlayer exo = playerManager.getPlayer();
+        String waiting = getString(R.string.media_info_waiting);
+        MediaInfoFormatter.MediaInfoColumns cols = MediaInfoFormatter.buildTwoColumns(exo,
+                getString(R.string.media_info_resolution),
+                getString(R.string.media_info_video_codec),
+                getString(R.string.media_info_audio_codec),
+                getString(R.string.media_info_sample_rate),
+                getString(R.string.media_info_channels),
+                waiting);
+        sb.append("── 视频 ──\n");
+        sb.append(cols.videoColumn.isEmpty() ? "—" : cols.videoColumn);
+        sb.append("\n\n── 音频 ──\n");
+        sb.append(cols.audioColumn.isEmpty() ? "—" : cols.audioColumn);
+        sb.append("\n\n── 节目预告 ──\n");
+        if (programs != null && !programs.isEmpty()) {
+            EpgProgram cur = programs.get(0);
+            sb.append(getString(R.string.current_program)).append("：")
+                    .append(cur.title).append("  ")
+                    .append(timeFormat.format(new Date(cur.startTime))).append(" - ")
+                    .append(timeFormat.format(new Date(cur.endTime))).append('\n');
+            if (programs.size() > 1) {
+                EpgProgram next = programs.get(1);
+                sb.append(getString(R.string.next_program)).append("：")
+                        .append(next.title).append("  ")
+                        .append(timeFormat.format(new Date(next.startTime))).append('\n');
+            }
+        } else {
+            sb.append(getString(R.string.no_epg));
+        }
+        return sb.toString();
     }
 
     private void switchChannel(int direction) {
@@ -479,7 +720,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             Set<Long> favIds = new HashSet<>(channelRepository.getAllFavoriteChannelIds());
             runOnUiThread(() -> {
                 ChannelListAdapter adapter = new ChannelListAdapter(allChannels, currentChannelIndex, favIds, channel -> {
-                    channelListOverlay.setVisibility(View.GONE);
+                    cancelChannelListIdleHide();
+                    if (channelListPanel != null) {
+                        channelListPanel.setVisibility(View.GONE);
+                    }
                     for (int i = 0; i < allChannels.size(); i++) {
                         if (allChannels.get(i).id == channel.id) {
                             currentChannelIndex = i;
@@ -487,10 +731,20 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                         }
                     }
                     playChannel(channel);
+                }, ch -> {
+                    scheduleChannelListIdleHide();
+                    updateChannelListEpgPanel(ch);
+                }, ch -> {
+                    toggleFavoriteForChannel(ch);
+                    return true;
                 });
 
                 channelListOverlay.setAdapter(adapter);
-                channelListOverlay.setVisibility(View.VISIBLE);
+                if (channelListPanel != null) {
+                    channelListPanel.setVisibility(View.VISIBLE);
+                }
+                scheduleChannelListIdleHide();
+                updateChannelListEpgPanel(allChannels.get(currentChannelIndex));
                 channelListOverlay.scrollToPosition(currentChannelIndex);
                 channelListOverlay.post(() -> {
                     RecyclerView.ViewHolder vh = channelListOverlay.findViewHolderForAdapterPosition(currentChannelIndex);
@@ -534,41 +788,37 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
         switch (keyCode) {
             case KeyEvent.KEYCODE_DPAD_UP:
-                if (channelListOverlay.getVisibility() != View.VISIBLE) {
-                    switchChannel(-1);
+                if (!isChannelListPanelVisible()) {
+                    switchChannel(channelStepForUpDown(-1));
                     return true;
                 }
                 break;
             case KeyEvent.KEYCODE_DPAD_DOWN:
-                if (channelListOverlay.getVisibility() != View.VISIBLE) {
-                    switchChannel(1);
+                if (!isChannelListPanelVisible()) {
+                    switchChannel(channelStepForUpDown(1));
                     return true;
                 }
                 break;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
-                if (channelListOverlay.getVisibility() != View.VISIBLE) {
+                if (!isChannelListPanelVisible()) {
                     showChannelList();
-                    showOverlayTemporarily();
-                    return true;
-                }
-                break;
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-                if (channelListOverlay.getVisibility() != View.VISIBLE) {
-                    showChannelList();
-                    showOverlayTemporarily();
                     return true;
                 }
                 break;
             case KeyEvent.KEYCODE_DPAD_RIGHT:
-                if (channelListOverlay.getVisibility() == View.VISIBLE) {
+                if (isChannelListPanelVisible()) {
+                    cancelChannelListIdleHide();
                     hideOverlay();
                     return true;
                 }
                 break;
             case KeyEvent.KEYCODE_BACK:
-                if (channelListOverlay.getVisibility() == View.VISIBLE) {
-                    channelListOverlay.setVisibility(View.GONE);
+                if (isChannelListPanelVisible()) {
+                    cancelChannelListIdleHide();
+                    if (channelListPanel != null) {
+                        channelListPanel.setVisibility(View.GONE);
+                    }
                     return true;
                 }
                 if (overlayVisible) {

@@ -26,6 +26,16 @@ public class SettingsActivity extends FragmentActivity implements SettingsPanelH
     }
 
     @Override
+    public boolean shouldShowSourceTimeoutGroup() {
+        return true;
+    }
+
+    @Override
+    public boolean shouldShowPlaybackMediaInfoHelp() {
+        return false;
+    }
+
+    @Override
     public PlayerManager getPlayerManagerOrNull() {
         return null;
     }

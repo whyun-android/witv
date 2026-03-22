@@ -7,9 +7,11 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 
 import com.whyun.witv.R;
@@ -17,18 +19,22 @@ import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.entity.Channel;
 import com.whyun.witv.data.db.entity.M3USource;
+import com.whyun.witv.player.PlayerManager;
 
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class MainActivity extends FragmentActivity {
+public class MainActivity extends FragmentActivity implements SettingsPanelHost {
 
     private static final String TAG = "MainActivity";
+    private static final String TAG_SETTINGS_FRAGMENT = "settings_drawer_main";
 
     private View emptyState;
+    private Button refreshWebHintButton;
     private TextView webAddress;
     private ProgressBar loadingProgress;
+    private View settingsPanelOverlay;
     private PreferenceManager preferenceManager;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private boolean autoPlayAttempted = false;
@@ -39,9 +45,20 @@ public class MainActivity extends FragmentActivity {
         setContentView(R.layout.activity_main);
 
         emptyState = findViewById(R.id.empty_state);
+        refreshWebHintButton = findViewById(R.id.btn_refresh_web_hint);
         webAddress = findViewById(R.id.tv_web_address);
         loadingProgress = findViewById(R.id.loading_progress);
+        settingsPanelOverlay = findViewById(R.id.settings_panel_overlay);
         preferenceManager = new PreferenceManager(this);
+
+        findViewById(R.id.settings_scrim).setOnClickListener(v -> hideSettingsPanel());
+        refreshWebHintButton.setOnClickListener(v -> refreshWebSetupAndChannels());
+
+        if (savedInstanceState == null) {
+            getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.settings_panel_content, new SettingsCollapsibleFragment(), TAG_SETTINGS_FRAGMENT)
+                    .commitNow();
+        }
 
         logLastPlaybackAtStartup();
 
@@ -77,13 +94,68 @@ public class MainActivity extends FragmentActivity {
 
     public void showEmptyState(boolean empty) {
         emptyState.setVisibility(empty ? View.VISIBLE : View.GONE);
+        Fragment browse = getSupportFragmentManager().findFragmentById(R.id.main_browse_fragment);
+        if (browse != null && browse.getView() != null) {
+            // 空状态盖在 Leanback 上时，浏览区仍会抢焦点；隐藏根视图才能把焦点留给「刷新」等控件
+            browse.getView().setVisibility(empty ? View.GONE : View.VISIBLE);
+        }
         if (empty) {
             updateWebAddress();
+            if (refreshWebHintButton != null) {
+                refreshWebHintButton.post(() -> {
+                    if (refreshWebHintButton != null && emptyState.getVisibility() == View.VISIBLE) {
+                        refreshWebHintButton.requestFocus();
+                    }
+                });
+            }
         }
     }
 
     public void showLoading(boolean loading) {
         loadingProgress.setVisibility(loading ? View.VISIBLE : View.GONE);
+    }
+
+    public void showSettingsPanel() {
+        if (settingsPanelOverlay == null) {
+            return;
+        }
+        settingsPanelOverlay.setVisibility(View.VISIBLE);
+        SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
+                .findFragmentByTag(TAG_SETTINGS_FRAGMENT);
+        if (f != null) {
+            f.refreshAndFocus();
+        }
+    }
+
+    private void hideSettingsPanel() {
+        SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
+                .findFragmentByTag(TAG_SETTINGS_FRAGMENT);
+        if (f != null) {
+            f.onSettingsDrawerDismiss();
+        }
+        if (settingsPanelOverlay != null) {
+            settingsPanelOverlay.setVisibility(View.GONE);
+        }
+        Fragment browse = getSupportFragmentManager().findFragmentById(R.id.main_browse_fragment);
+        if (emptyState != null && emptyState.getVisibility() == View.VISIBLE) {
+            if (refreshWebHintButton != null) {
+                refreshWebHintButton.requestFocus();
+            }
+        } else if (browse != null && browse.getView() != null) {
+            browse.getView().requestFocus();
+        }
+    }
+
+    public boolean isSettingsPanelVisible() {
+        return settingsPanelOverlay != null && settingsPanelOverlay.getVisibility() == View.VISIBLE;
+    }
+
+    public void refreshWebSetupAndChannels() {
+        updateWebAddress();
+        Fragment frag = getSupportFragmentManager().findFragmentById(R.id.main_browse_fragment);
+        if (frag instanceof MainFragment) {
+            ((MainFragment) frag).loadChannels();
+        }
     }
 
     private void updateWebAddress() {
@@ -151,16 +223,78 @@ public class MainActivity extends FragmentActivity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (isSettingsPanelVisible()) {
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
+                        .findFragmentByTag(TAG_SETTINGS_FRAGMENT);
+                if (f != null && f.handleBack()) {
+                    return true;
+                }
+                hideSettingsPanel();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_F6) {
+                hideSettingsPanel();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP
+                    || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                    || keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                    || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                    || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                    || keyCode == KeyEvent.KEYCODE_ENTER) {
+                SettingsCollapsibleFragment navFragment = (SettingsCollapsibleFragment) getSupportFragmentManager()
+                        .findFragmentByTag(TAG_SETTINGS_FRAGMENT);
+                if (navFragment != null) {
+                    navFragment.dispatchDrawerKey(keyCode, event);
+                }
+                return true;
+            }
+        }
         if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_F6) {
-            startActivity(new Intent(this, SettingsActivity.class));
+            showSettingsPanel();
             return true;
         }
         return super.onKeyDown(keyCode, event);
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        hideSettingsPanel();
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         executor.shutdown();
+    }
+
+    @Override
+    public boolean shouldShowStreamSwitchGroup() {
+        return false;
+    }
+
+    @Override
+    public boolean shouldShowSourceTimeoutGroup() {
+        return true;
+    }
+
+    @Override
+    public boolean shouldShowPlaybackMediaInfoHelp() {
+        return false;
+    }
+
+    @Override
+    public PlayerManager getPlayerManagerOrNull() {
+        return null;
+    }
+
+    @Override
+    public void onManualStreamSwitch(int index) {
+    }
+
+    @Override
+    public void onPlaybackOverlayPreferenceChanged() {
     }
 }

@@ -4,6 +4,30 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [1.1.0] - 2026-03-22
+
+### Added
+
+- HLS 播放列表客户端修正：识别源站将 `#EXT-X-MEDIA-SEQUENCE` 误写为「最后一片序号」时，改写为第一片序号；修正 `##EXT-X-VERSION` 双井号（`HlsMediaSequenceFixUtil` + `M3u8RewritingDataSource` 注入 `DefaultDataSource`）
+- 对应单元测试 `HlsMediaSequenceFixUtilTest`
+- 首页「设置」分类：可点击的快捷行（`SettingsShortcutEntry` / `SettingsShortcutPresenter`），仅确认后打开设置，避免焦点路过即弹出
+- 设置帮助拆分为子项：媒体信息、帮助说明、关于应用；关于中展示构建时间（`BuildConfig.BUILD_TIME_MILLIS`）
+- 频道列表长按切换该行收藏（`ChannelListAdapter`）
+- 超时换源偏好可在非播放页设置（`MainActivity` / `SettingsActivity` 等展示该分组）
+
+### Changed
+
+- Media3 升级至 **1.10.0-rc01**；`minSdk` 提升至 **23**（与 Media3 1.9+ / AndroidX 对齐）
+- 首页设置浮层改为锚定窗口**左下角**；`MainActivity` `onPause` 时收起设置层，避免后台 Activity 仍挂起可见浮层
+- 无 M3U 源时空状态：隐藏 Browse 根视图并为「刷新」请求焦点，避免 Leanback 抢走焦点
+- 设置抽屉内从**左侧子菜单**按 **右键** 显式回到**右侧主菜单**当前分类，修复切换线路后 `notifyDataSetChanged` 导致焦点链断裂、无法返回父菜单的问题
+
+### Fixed
+
+- `SettingsCollapsibleFragment`：切换播放线路后子菜单刷新，方向键右键无法回到主菜单
+
+[1.1.0]: https://github.com/whyun-android/witv/compare/v1.0.2...v1.1.0
+
 ## [1.0.2] - 2026-03-21
 
 ### Added

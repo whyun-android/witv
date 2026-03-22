@@ -94,16 +94,14 @@ public class MainFragment extends BrowseSupportFragment {
             Set<Long> favIds = new HashSet<>(channelRepository.getAllFavoriteChannelIds());
 
             List<Channel> favorites = channelRepository.getFavoriteChannels(activeSource.id);
-            if (!favorites.isEmpty()) {
-                ChannelPresenter favPresenter = new ChannelPresenter();
-                favPresenter.setFavoriteIds(favIds);
-                ArrayObjectAdapter favAdapter = new ArrayObjectAdapter(favPresenter);
-                for (Channel ch : favorites) {
-                    favAdapter.add(ch);
-                }
-                HeaderItem favHeader = new HeaderItem(headerIndex++, getString(R.string.favorites));
-                newRows.add(new ListRow(favHeader, favAdapter));
+            ChannelPresenter favPresenter = new ChannelPresenter();
+            favPresenter.setFavoriteIds(favIds);
+            ArrayObjectAdapter favAdapter = new ArrayObjectAdapter(favPresenter);
+            for (Channel ch : favorites) {
+                favAdapter.add(ch);
             }
+            HeaderItem favHeader = new HeaderItem(headerIndex++, getString(R.string.favorite_channels_category));
+            newRows.add(new ListRow(favHeader, favAdapter));
 
             for (int i = 0; i < groups.size(); i++) {
                 String group = groups.get(i);
@@ -120,6 +118,11 @@ public class MainFragment extends BrowseSupportFragment {
                 HeaderItem header = new HeaderItem(headerIndex++, displayGroup);
                 newRows.add(new ListRow(header, listRowAdapter));
             }
+
+            HeaderItem settingsHeader = new HeaderItem(headerIndex++, getString(R.string.settings));
+            ArrayObjectAdapter settingsRowAdapter = new ArrayObjectAdapter(new SettingsShortcutPresenter());
+            settingsRowAdapter.add(SettingsShortcutEntry.INSTANCE);
+            newRows.add(new SettingsShortcutListRow(settingsHeader, settingsRowAdapter));
 
             // Clean ended programs quickly; full EPG fetch runs on separate executor (non-blocking)
             if (activeSource.epgUrl != null && !activeSource.epgUrl.isEmpty()) {
@@ -146,8 +149,7 @@ public class MainFragment extends BrowseSupportFragment {
                     for (int i = 0; i < newRows.size(); i++) {
                         rowsAdapter.add(newRows.get(i));
                     }
-                    boolean empty = groups.isEmpty() && favorites.isEmpty();
-                    ((MainActivity) getActivity()).showEmptyState(empty);
+                    ((MainActivity) getActivity()).showEmptyState(false);
                 });
             }
         });
@@ -164,6 +166,10 @@ public class MainFragment extends BrowseSupportFragment {
         @Override
         public void onItemClicked(Presenter.ViewHolder itemViewHolder, Object item,
                                   RowPresenter.ViewHolder rowViewHolder, Row row) {
+            if (item instanceof SettingsShortcutEntry && getActivity() instanceof MainActivity) {
+                ((MainActivity) getActivity()).showSettingsPanel();
+                return;
+            }
             if (item instanceof Channel) {
                 Channel channel = (Channel) item;
                 Intent intent = new Intent(getActivity(), PlayerActivity.class);
