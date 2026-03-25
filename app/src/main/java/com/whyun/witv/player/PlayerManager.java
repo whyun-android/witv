@@ -31,6 +31,7 @@ import com.whyun.witv.data.db.entity.ChannelSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 public class PlayerManager {
 
@@ -55,6 +56,13 @@ public class PlayerManager {
 
     /** 固定 UA，避免部分 IPTV 源对默认 ExoPlayer/Media3 特征敏感。 */
     private static final String HTTP_USER_AGENT = "stagefright/1.2 (Linux;Android 7.1.2)";
+
+    /**
+     * Microsoft Smooth Streaming 发布点路径形态（与 {@code androidx.media3.common.util.Util} 中
+     * ISM 规则一致），用于在无 {@code .mpd}/{@code .m3u8} 后缀时识别 SS Manifest。
+     */
+    private static final Pattern SMOOTH_STREAMING_PATH_PATTERN = Pattern.compile(
+            "(?:.*\\.)?isml?(?:/(manifest(.*))?)?", Pattern.CASE_INSENSITIVE);
 
     /**
      * 是否为「落后于直播窗口」类错误（见 Media3 直播文档：应 seekToDefaultPosition 而非换源）。
@@ -251,8 +259,19 @@ public class PlayerManager {
     private MediaItem buildMediaItem(String url) {
         Uri uri = Uri.parse(url);
         String lowerUrl = url.toLowerCase(Locale.US);
+        @Nullable String scheme = uri.getScheme();
+        String lowerScheme = scheme != null ? scheme.toLowerCase(Locale.US) : "";
 
         MediaItem.Builder builder = new MediaItem.Builder().setUri(uri);
+
+        // RTSP：由 media3-exoplayer-rtsp 处理（scheme 推断为 TYPE_RTSP）。
+        if ("rtsp".equals(lowerScheme)) {
+            return builder.build();
+        }
+        // RTMP：RtmpDataSource（media3-datasource-rtmp）+ 渐进式容器（常见为 FLV）。
+        if ("rtmp".equals(lowerScheme)) {
+            return builder.build();
+        }
 
         if (lowerUrl.contains(".m3u8") || lowerUrl.contains("/hls/")
                 || lowerUrl.contains("type=m3u8")) {
@@ -263,14 +282,36 @@ public class PlayerManager {
                     .setMaxOffsetMs(C.TIME_UNSET)
                     .build();
             builder.setLiveConfiguration(liveConfig);
-        } else if (lowerUrl.contains(".mpd") || lowerUrl.contains("/dash/")) {
+        } else if (lowerUrl.contains(".mpd") || lowerUrl.contains("/dash/")
+                || lowerUrl.contains("type=mpd")
+                || lowerUrl.contains("application/dash+xml")) {
             builder.setMimeType(MimeTypes.APPLICATION_MPD);
+        } else if (isSmoothStreamingUrl(uri, lowerUrl)) {
+            builder.setMimeType(MimeTypes.APPLICATION_SS);
         } else if (lowerUrl.endsWith(".ts") || lowerUrl.contains(".ts?")) {
             builder.setMimeType(MimeTypes.VIDEO_MP2T);
         }
         // Otherwise let ExoPlayer auto-detect
 
         return builder.build();
+    }
+
+    /**
+     * 是否为经典 Smooth Streaming（.ism / .isml）Manifest；排除同一发布点上 HLS/DASH 别名
+     * （{@code format=m3u8-aapl}、{@code format=mpd-time-csf}）。
+     */
+    private static boolean isSmoothStreamingUrl(Uri uri, String lowerUrl) {
+        if (lowerUrl.contains("format=m3u8-aapl") || lowerUrl.contains("format=mpd-time-csf")) {
+            return false;
+        }
+        String path = uri.getPath();
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        while (path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
+        }
+        return SMOOTH_STREAMING_PATH_PATTERN.matcher(path).matches();
     }
 
     /**
