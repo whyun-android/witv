@@ -40,9 +40,11 @@ import com.whyun.witv.data.repository.ChannelRepository;
 import com.whyun.witv.data.repository.EpgRepository;
 import com.whyun.witv.player.PlayerManager;
 
+import java.util.ArrayList;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -50,6 +52,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class PlayerActivity extends FragmentActivity implements PlayerManager.Callback, SettingsPanelHost {
+    private static final String CHANNEL_GROUP_FAVORITES = "我的收藏";
+    private static final String CHANNEL_GROUP_ALL = "全部频道";
+    private static final String CHANNEL_GROUP_UNCATEGORIZED = "未分类";
 
     public static final String EXTRA_CHANNEL_ID = "channel_id";
     public static final String EXTRA_SOURCE_ID = "source_id";
@@ -71,7 +76,9 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private TextView switchingToast;
     private TextView loadSpeedOverlay;
     private View channelListPanel;
+    private RecyclerView channelGroupListOverlay;
     private RecyclerView channelListOverlay;
+    private ChannelGroupListAdapter channelGroupAdapter;
     private TextView channelListEpgChannelName;
     private TextView channelListEpgContent;
     private int channelListEpgLoadSeq = 0;
@@ -84,6 +91,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private long sourceId;
     private Channel currentChannel;
     private List<Channel> allChannels;
+    private List<String> visibleChannelGroups = new ArrayList<>();
+    private List<Channel> visibleChannels = new ArrayList<>();
+    private Set<Long> currentFavoriteIds = new HashSet<>();
+    private int selectedChannelGroupIndex = 0;
     private int currentChannelIndex = 0;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -172,9 +183,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         switchingToast = findViewById(R.id.switching_toast);
         loadSpeedOverlay = findViewById(R.id.load_speed_overlay);
         channelListPanel = findViewById(R.id.channel_list_panel);
+        channelGroupListOverlay = findViewById(R.id.channel_group_list_overlay);
         channelListOverlay = findViewById(R.id.channel_list_overlay);
         channelListEpgChannelName = findViewById(R.id.channel_list_epg_channel_name);
         channelListEpgContent = findViewById(R.id.channel_list_epg_content);
+        channelGroupListOverlay.setLayoutManager(new LinearLayoutManager(this));
         channelListOverlay.setLayoutManager(new LinearLayoutManager(this));
 
         settingsPanelOverlay = findViewById(R.id.settings_panel_overlay);
@@ -391,6 +404,12 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 RecyclerView.Adapter<?> ad = channelListOverlay.getAdapter();
                 if (ad instanceof ChannelListAdapter) {
                     ((ChannelListAdapter) ad).setFavoriteIds(favIds);
+                }
+                currentFavoriteIds = favIds;
+                if (!visibleChannelGroups.isEmpty() && selectedChannelGroupIndex >= 0
+                        && selectedChannelGroupIndex < visibleChannelGroups.size()) {
+                    visibleChannels = getChannelsForGroup(visibleChannelGroups.get(selectedChannelGroupIndex));
+                    bindChannelListForSelectedGroup(false);
                 }
                 switchingToast.setText(nowFav
                         ? getString(R.string.added_to_favorites)
@@ -719,38 +738,178 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         executor.execute(() -> {
             Set<Long> favIds = new HashSet<>(channelRepository.getAllFavoriteChannelIds());
             runOnUiThread(() -> {
-                ChannelListAdapter adapter = new ChannelListAdapter(allChannels, currentChannelIndex, favIds, channel -> {
-                    cancelChannelListIdleHide();
-                    if (channelListPanel != null) {
-                        channelListPanel.setVisibility(View.GONE);
-                    }
-                    for (int i = 0; i < allChannels.size(); i++) {
-                        if (allChannels.get(i).id == channel.id) {
-                            currentChannelIndex = i;
-                            break;
-                        }
-                    }
-                    playChannel(channel);
-                }, ch -> {
-                    scheduleChannelListIdleHide();
-                    updateChannelListEpgPanel(ch);
-                }, ch -> {
-                    toggleFavoriteForChannel(ch);
-                    return true;
-                });
-
-                channelListOverlay.setAdapter(adapter);
+                currentFavoriteIds = favIds;
+                visibleChannelGroups = buildVisibleChannelGroups(allChannels);
+                selectedChannelGroupIndex = findCurrentChannelGroupIndex();
+                visibleChannels = getChannelsForGroup(visibleChannelGroups.get(selectedChannelGroupIndex));
+                bindChannelGroupList();
+                bindChannelListForSelectedGroup(false);
                 if (channelListPanel != null) {
                     channelListPanel.setVisibility(View.VISIBLE);
                 }
                 scheduleChannelListIdleHide();
-                updateChannelListEpgPanel(allChannels.get(currentChannelIndex));
-                channelListOverlay.scrollToPosition(currentChannelIndex);
-                channelListOverlay.post(() -> {
-                    RecyclerView.ViewHolder vh = channelListOverlay.findViewHolderForAdapterPosition(currentChannelIndex);
-                    if (vh != null) vh.itemView.requestFocus();
-                });
+                channelGroupListOverlay.scrollToPosition(selectedChannelGroupIndex);
+                channelListOverlay.post(this::focusCurrentChannelRow);
             });
+        });
+    }
+
+    private void bindChannelGroupList() {
+        channelGroupAdapter = new ChannelGroupListAdapter(
+                visibleChannelGroups,
+                selectedChannelGroupIndex,
+                (position, groupName) -> {
+                    scheduleChannelListIdleHide();
+                    updateSelectedGroup(position, true);
+                },
+                (position, groupName) -> {
+                    scheduleChannelListIdleHide();
+                    updateSelectedGroup(position, false);
+                });
+        channelGroupListOverlay.setAdapter(channelGroupAdapter);
+    }
+
+    private void updateSelectedGroup(int position, boolean requestChannelFocus) {
+        if (position < 0 || position >= visibleChannelGroups.size()) {
+            return;
+        }
+        if (position == selectedChannelGroupIndex && !visibleChannels.isEmpty()) {
+            if (requestChannelFocus) {
+                channelListOverlay.post(this::focusCurrentChannelRow);
+            }
+            return;
+        }
+        selectedChannelGroupIndex = position;
+        visibleChannels = getChannelsForGroup(visibleChannelGroups.get(position));
+        if (channelGroupAdapter != null) {
+            channelGroupAdapter.setSelectedIndex(position);
+        }
+        bindChannelListForSelectedGroup(requestChannelFocus);
+    }
+
+    private void bindChannelListForSelectedGroup(boolean requestChannelFocus) {
+        int selectedIndexInGroup = findCurrentChannelIndexInVisibleChannels();
+        ChannelListAdapter adapter = new ChannelListAdapter(visibleChannels, selectedIndexInGroup, currentFavoriteIds, channel -> {
+            cancelChannelListIdleHide();
+            if (channelListPanel != null) {
+                channelListPanel.setVisibility(View.GONE);
+            }
+            for (int i = 0; i < allChannels.size(); i++) {
+                if (allChannels.get(i).id == channel.id) {
+                    currentChannelIndex = i;
+                    break;
+                }
+            }
+            playChannel(channel);
+        }, ch -> {
+            scheduleChannelListIdleHide();
+            updateChannelListEpgPanel(ch);
+        }, ch -> {
+            toggleFavoriteForChannel(ch);
+            return true;
+        });
+        channelListOverlay.setAdapter(adapter);
+        if (!visibleChannels.isEmpty()) {
+            Channel target = visibleChannels.get(Math.max(0, selectedIndexInGroup));
+            updateChannelListEpgPanel(target);
+            channelListOverlay.scrollToPosition(Math.max(0, selectedIndexInGroup));
+        } else {
+            channelListEpgChannelName.setText("");
+            channelListEpgContent.setText(getString(R.string.no_epg));
+        }
+        if (requestChannelFocus) {
+            channelListOverlay.post(this::focusCurrentChannelRow);
+        }
+    }
+
+    private void focusCurrentChannelRow() {
+        int selectedIndexInGroup = findCurrentChannelIndexInVisibleChannels();
+        if (selectedIndexInGroup < 0) {
+            selectedIndexInGroup = 0;
+        }
+        final int targetPosition = selectedIndexInGroup;
+        channelListOverlay.scrollToPosition(targetPosition);
+        channelListOverlay.post(() -> {
+            RecyclerView.ViewHolder vh = channelListOverlay.findViewHolderForAdapterPosition(targetPosition);
+            if (vh != null) {
+                vh.itemView.requestFocus();
+            }
+        });
+    }
+
+    private List<String> buildVisibleChannelGroups(List<Channel> channels) {
+        LinkedHashSet<String> groups = new LinkedHashSet<>();
+        groups.add(CHANNEL_GROUP_FAVORITES);
+        groups.add(CHANNEL_GROUP_ALL);
+        for (Channel channel : channels) {
+            String groupName = normalizeChannelGroup(channel);
+            groups.add(groupName);
+        }
+        return new ArrayList<>(groups);
+    }
+
+    private int findCurrentChannelGroupIndex() {
+        if (visibleChannelGroups.isEmpty()) {
+            return 0;
+        }
+        if (currentFavoriteIds.contains(currentChannelId)) {
+            return 0;
+        }
+        String currentGroup = normalizeChannelGroup(currentChannel);
+        for (int i = 0; i < visibleChannelGroups.size(); i++) {
+            if (visibleChannelGroups.get(i).equals(currentGroup)) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    private List<Channel> getChannelsForGroup(String groupName) {
+        if (CHANNEL_GROUP_FAVORITES.equals(groupName)) {
+            List<Channel> result = new ArrayList<>();
+            for (Channel channel : allChannels) {
+                if (currentFavoriteIds.contains(channel.id)) {
+                    result.add(channel);
+                }
+            }
+            return result;
+        }
+        if (CHANNEL_GROUP_ALL.equals(groupName)) {
+            return new ArrayList<>(allChannels);
+        }
+        List<Channel> result = new ArrayList<>();
+        for (Channel channel : allChannels) {
+            if (groupName.equals(normalizeChannelGroup(channel))) {
+                result.add(channel);
+            }
+        }
+        return result;
+    }
+
+    private int findCurrentChannelIndexInVisibleChannels() {
+        for (int i = 0; i < visibleChannels.size(); i++) {
+            if (visibleChannels.get(i).id == currentChannelId) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    private String normalizeChannelGroup(Channel channel) {
+        if (channel == null || channel.groupTitle == null || channel.groupTitle.trim().isEmpty()) {
+            return CHANNEL_GROUP_UNCATEGORIZED;
+        }
+        return channel.groupTitle.trim();
+    }
+
+    private void focusSelectedGroupRow() {
+        int targetPosition = Math.max(0, selectedChannelGroupIndex);
+        channelGroupListOverlay.scrollToPosition(targetPosition);
+        channelGroupListOverlay.post(() -> {
+            RecyclerView.ViewHolder vh = channelGroupListOverlay.findViewHolderForAdapterPosition(targetPosition);
+            if (vh != null) {
+                vh.itemView.requestFocus();
+            }
         });
     }
 
@@ -808,9 +967,25 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 break;
             case KeyEvent.KEYCODE_DPAD_RIGHT:
                 if (isChannelListPanelVisible()) {
+                    View focused = getCurrentFocus();
+                    if (focused != null && channelGroupListOverlay != null
+                            && isDescendantOf(focused, channelGroupListOverlay)) {
+                        focusCurrentChannelRow();
+                        return true;
+                    }
                     cancelChannelListIdleHide();
                     hideOverlay();
                     return true;
+                }
+                break;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                if (isChannelListPanelVisible()) {
+                    View focused = getCurrentFocus();
+                    if (focused != null && channelListOverlay != null
+                            && isDescendantOf(focused, channelListOverlay)) {
+                        focusSelectedGroupRow();
+                        return true;
+                    }
                 }
                 break;
             case KeyEvent.KEYCODE_BACK:
@@ -917,5 +1092,19 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         WiTVApp.getInstance().setActivePlayerManager(null);
         playerManager.release();
         executor.shutdown();
+    }
+
+    private boolean isDescendantOf(View child, View parent) {
+        View current = child;
+        while (current != null) {
+            if (current == parent) {
+                return true;
+            }
+            if (!(current.getParent() instanceof View)) {
+                break;
+            }
+            current = (View) current.getParent();
+        }
+        return false;
     }
 }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="64dp"
+    android:layout_height="76dp"
     android:background="@drawable/channel_item_bg"
     android:focusable="true"
     android:focusableInTouchMode="true"
@@ -29,7 +29,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:textColor="@color/text_primary"
-            android:textSize="16sp" />
+            android:textSize="20sp" />
 
         <TextView
             android:id="@+id/channel_epg"
@@ -38,7 +38,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
+            android:textSize="15sp" />
 
     </LinearLayout>
 
@@ -55,6 +55,6 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textColor="@color/text_secondary"
-        android:textSize="14sp" />
+        android:textSize="18sp" />
 
 </LinearLayout>

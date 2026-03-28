@@ -216,17 +216,25 @@
         android:textSize="18sp"
         android:visibility="gone" />
 
-    <!-- Channel list + EPG preview (two columns) -->
+    <!-- Channel group + channel list + EPG preview -->
     <LinearLayout
         android:id="@+id/channel_list_panel"
-        android:layout_width="620dp"
+        android:layout_width="920dp"
         android:layout_height="match_parent"
         android:orientation="horizontal"
         android:visibility="gone">
 
         <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/channel_group_list_overlay"
+            android:layout_width="220dp"
+            android:layout_height="match_parent"
+            android:background="#E30C1218"
+            android:clipToPadding="false"
+            android:padding="8dp" />
+
+        <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/channel_list_overlay"
-            android:layout_width="300dp"
+            android:layout_width="340dp"
             android:layout_height="match_parent"
             android:background="@color/channel_list_bg"
             android:clipToPadding="false"
@@ -253,7 +261,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:textColor="@color/text_primary"
-                    android:textSize="18sp"
+                    android:textSize="24sp"
                     android:textStyle="bold" />
 
                 <TextView
@@ -263,7 +271,7 @@
                     android:layout_marginTop="10dp"
                     android:lineSpacingMultiplier="1.25"
                     android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
+                    android:textSize="18sp" />
             </LinearLayout>
         </ScrollView>
     </LinearLayout>

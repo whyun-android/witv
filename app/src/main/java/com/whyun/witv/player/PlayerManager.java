@@ -45,11 +45,13 @@ public class PlayerManager {
     }
 
     /**
-     * 直播 HLS：目标离 live edge 更远，延迟略增但更不易掉出滑动窗口。
+     * 直播 HLS：主动离 live edge 更远一些，用额外延迟换取更高的抗抖动能力。
      */
-    private static final long LIVE_TARGET_OFFSET_MS = 10_000L;
-    /** 不允许贴边过近（与 target 配合，减少 BehindLiveWindow）。 */
-    private static final long LIVE_MIN_OFFSET_MS = 5_000L;
+    private static final long LIVE_TARGET_OFFSET_MS = 18_000L;
+    /** 不允许贴边过近（与 target 配合，减少 BehindLiveWindow 与轻微丢包导致的卡顿）。 */
+    private static final long LIVE_MIN_OFFSET_MS = 12_000L;
+    /** 允许播放器在网络更差时继续后退，优先保证不断流。 */
+    private static final long LIVE_MAX_OFFSET_MS = 30_000L;
 
     private static final int HTTP_CONNECT_TIMEOUT_MS = 12_000;
     private static final int HTTP_READ_TIMEOUT_MS = 45_000;
@@ -179,10 +181,10 @@ public class PlayerManager {
 
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                        20_000,  // minBufferMs
-                        55_000,  // maxBufferMs
-                        3000,    // bufferForPlaybackMs
-                        9000     // bufferForPlaybackAfterRebufferMs
+                        35_000,  // minBufferMs
+                        90_000,  // maxBufferMs
+                        6000,    // bufferForPlaybackMs
+                        15_000   // bufferForPlaybackAfterRebufferMs
                 )
                 .build();
 
@@ -279,7 +281,7 @@ public class PlayerManager {
             MediaItem.LiveConfiguration liveConfig = new MediaItem.LiveConfiguration.Builder()
                     .setTargetOffsetMs(LIVE_TARGET_OFFSET_MS)
                     .setMinOffsetMs(LIVE_MIN_OFFSET_MS)
-                    .setMaxOffsetMs(C.TIME_UNSET)
+                    .setMaxOffsetMs(LIVE_MAX_OFFSET_MS)
                     .build();
             builder.setLiveConfiguration(liveConfig);
         } else if (lowerUrl.contains(".mpd") || lowerUrl.contains("/dash/")
