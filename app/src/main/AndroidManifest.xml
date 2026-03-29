@@ -25,7 +25,8 @@
         android:theme="@style/Theme.WiTV">
 
         <activity
-            android:name=".ui.MainActivity"
+            android:name=".ui.PlayerActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout"
             android:exported="true"
             android:screenOrientation="landscape">
             <intent-filter>
@@ -37,11 +38,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name=".ui.PlayerActivity"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout"
-            android:screenOrientation="landscape" />
 
         <activity
             android:name=".ui.SettingsActivity"

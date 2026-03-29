@@ -1,6 +1,8 @@
 package com.whyun.witv.ui;
 
 import android.app.AlertDialog;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
@@ -12,6 +14,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.Button;
 
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -65,8 +68,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private PreferenceManager preferenceManager;
 
     private View epgOverlay;
+    private View emptyState;
     private TextView channelNameView;
     private TextView sourceInfoView;
+    private TextView webAddressView;
     private ImageView channelLogoView;
     private ImageView favoriteIcon;
     private TextView currentProgramView;
@@ -84,6 +89,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private int channelListEpgLoadSeq = 0;
     private View settingsPanelOverlay;
     private PlayerView playerView;
+    private Button refreshWebHintButton;
 
     private boolean isFavorite = false;
 
@@ -103,6 +109,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private boolean overlayVisible = false;
     private final Runnable hideOverlayRunnable = () -> hideOverlay();
+    private AlertDialog exitDialog;
 
     private static final long CHANNEL_LIST_HIDE_IDLE_MS = 10_000L;
     private final Runnable hideChannelListIdleRunnable = () -> {
@@ -172,8 +179,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private void initViews() {
         epgOverlay = findViewById(R.id.epg_overlay);
+        emptyState = findViewById(R.id.empty_state);
         channelNameView = findViewById(R.id.channel_name);
         sourceInfoView = findViewById(R.id.source_info);
+        webAddressView = findViewById(R.id.tv_web_address);
         channelLogoView = findViewById(R.id.channel_logo);
         favoriteIcon = findViewById(R.id.favorite_icon);
         currentProgramView = findViewById(R.id.current_program);
@@ -187,8 +196,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         channelListOverlay = findViewById(R.id.channel_list_overlay);
         channelListEpgChannelName = findViewById(R.id.channel_list_epg_channel_name);
         channelListEpgContent = findViewById(R.id.channel_list_epg_content);
+        refreshWebHintButton = findViewById(R.id.btn_refresh_web_hint);
         channelGroupListOverlay.setLayoutManager(new LinearLayoutManager(this));
         channelListOverlay.setLayoutManager(new LinearLayoutManager(this));
+        refreshWebHintButton.setOnClickListener(v -> reloadInitialChannel());
+        updateWebAddress();
 
         settingsPanelOverlay = findViewById(R.id.settings_panel_overlay);
         findViewById(R.id.settings_scrim).setOnClickListener(v -> hideSettingsPanel());
@@ -301,13 +313,15 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private void loadAndPlay() {
         executor.execute(() -> {
             AppDatabase db = AppDatabase.getInstance(this);
-            currentChannel = db.channelDao().getById(currentChannelId);
-            allChannels = db.channelDao().getBySource(sourceId);
+            currentChannel = resolveInitialChannel(db);
+            allChannels = sourceId > 0 ? db.channelDao().getBySource(sourceId) : new ArrayList<>();
 
-            for (int i = 0; i < allChannels.size(); i++) {
-                if (allChannels.get(i).id == currentChannelId) {
-                    currentChannelIndex = i;
-                    break;
+            if (currentChannel != null) {
+                for (int i = 0; i < allChannels.size(); i++) {
+                    if (allChannels.get(i).id == currentChannelId) {
+                        currentChannelIndex = i;
+                        break;
+                    }
                 }
             }
 
@@ -316,13 +330,113 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 isFavorite = channelRepository.isFavorite(currentChannelId);
                 List<ChannelSource> sources = channelRepository.getChannelSources(currentChannelId);
                 runOnUiThread(() -> {
+                    showEmptyState(false);
                     updateChannelInfo();
                     dismissAllSourcesFailedToast();
                     playerManager.playChannel(sources);
                     showOverlayTemporarily();
                 });
+            } else {
+                runOnUiThread(() -> {
+                    showEmptyState(true);
+                    hideOverlay();
+                    switchingToast.setVisibility(View.GONE);
+                });
             }
         });
+    }
+
+    private void reloadInitialChannel() {
+        updateWebAddress();
+        switchingToast.setVisibility(View.GONE);
+        loadAndPlay();
+    }
+
+    private void showEmptyState(boolean show) {
+        if (emptyState == null) {
+            return;
+        }
+        emptyState.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (playerView != null) {
+            playerView.setVisibility(show ? View.GONE : View.VISIBLE);
+        }
+        if (show) {
+            updateWebAddress();
+            if (refreshWebHintButton != null) {
+                refreshWebHintButton.post(refreshWebHintButton::requestFocus);
+            }
+        }
+    }
+
+    private void updateWebAddress() {
+        if (webAddressView == null) {
+            return;
+        }
+        webAddressView.setText(String.format(Locale.getDefault(), "http://%s:9978", getDeviceIp()));
+    }
+
+    private String getDeviceIp() {
+        try {
+            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            if (wifiManager != null) {
+                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
+                int ipInt = wifiInfo.getIpAddress();
+                if (ipInt != 0) {
+                    return String.format(Locale.US, "%d.%d.%d.%d",
+                            (ipInt & 0xff), (ipInt >> 8 & 0xff),
+                            (ipInt >> 16 & 0xff), (ipInt >> 24 & 0xff));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "0.0.0.0";
+    }
+
+    private Channel resolveInitialChannel(AppDatabase db) {
+        Channel channel = null;
+
+        if (currentChannelId > 0) {
+            channel = db.channelDao().getById(currentChannelId);
+        }
+
+        if (channel != null) {
+            sourceId = channel.sourceId;
+            currentChannelId = channel.id;
+            return channel;
+        }
+
+        long lastChannelId = preferenceManager.getLastChannelId();
+        if (lastChannelId > 0) {
+            channel = db.channelDao().getById(lastChannelId);
+        }
+
+        if (channel != null) {
+            sourceId = channel.sourceId;
+            currentChannelId = channel.id;
+            return channel;
+        }
+
+        if (sourceId > 0) {
+            channel = db.channelDao().getFirstBySource(sourceId);
+        }
+
+        if (channel == null) {
+            channel = findFirstChannelFromActiveSource(db);
+        }
+
+        if (channel != null) {
+            sourceId = channel.sourceId;
+            currentChannelId = channel.id;
+        }
+        return channel;
+    }
+
+    private Channel findFirstChannelFromActiveSource(AppDatabase db) {
+        com.whyun.witv.data.db.entity.M3USource activeSource = db.m3uSourceDao().getActive();
+        if (activeSource == null) {
+            return null;
+        }
+        return db.channelDao().getFirstBySource(activeSource.id);
     }
 
     private void playChannel(Channel channel) {
@@ -947,12 +1061,18 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
         switch (keyCode) {
             case KeyEvent.KEYCODE_DPAD_UP:
+                if (emptyState != null && emptyState.getVisibility() == View.VISIBLE) {
+                    break;
+                }
                 if (!isChannelListPanelVisible()) {
                     switchChannel(channelStepForUpDown(-1));
                     return true;
                 }
                 break;
             case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (emptyState != null && emptyState.getVisibility() == View.VISIBLE) {
+                    break;
+                }
                 if (!isChannelListPanelVisible()) {
                     switchChannel(channelStepForUpDown(1));
                     return true;
@@ -960,6 +1080,9 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 break;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
+                if (emptyState != null && emptyState.getVisibility() == View.VISIBLE) {
+                    break;
+                }
                 if (!isChannelListPanelVisible()) {
                     showChannelList();
                     return true;
@@ -989,20 +1112,13 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 }
                 break;
             case KeyEvent.KEYCODE_BACK:
-                if (isChannelListPanelVisible()) {
-                    cancelChannelListIdleHide();
-                    if (channelListPanel != null) {
-                        channelListPanel.setVisibility(View.GONE);
-                    }
-                    return true;
-                }
-                if (overlayVisible) {
-                    hideOverlay();
-                    return true;
-                }
-                break;
+                showExitDialog();
+                return true;
             case KeyEvent.KEYCODE_INFO:
             case KeyEvent.KEYCODE_SPACE:
+                if (emptyState != null && emptyState.getVisibility() == View.VISIBLE) {
+                    return true;
+                }
                 if (overlayVisible) {
                     hideOverlay();
                 } else {
@@ -1032,6 +1148,41 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 break;
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (isSettingsPanelVisible()) {
+            SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
+                    .findFragmentByTag("settings_drawer");
+            if (f != null && f.handleBack()) {
+                return;
+            }
+            hideSettingsPanel();
+            return;
+        }
+        showExitDialog();
+    }
+
+    private void showExitDialog() {
+        if (isFinishing()) {
+            return;
+        }
+        if (exitDialog != null && exitDialog.isShowing()) {
+            return;
+        }
+        exitDialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.exit_dialog_title)
+                .setMessage(R.string.exit_dialog_message)
+                .setNegativeButton(R.string.settings, (dialog, which) -> showSettingsPanel())
+                .setPositiveButton(R.string.exit_dialog_rest, (dialog, which) -> finish())
+                .create();
+        exitDialog.setOnDismissListener(dialog -> exitDialog = null);
+        exitDialog.show();
+        Button restButton = exitDialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        if (restButton != null) {
+            restButton.post(restButton::requestFocus);
+        }
     }
 
     // PlayerManager.Callback implementations
@@ -1071,6 +1222,9 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         super.onPause();
         handler.removeCallbacks(loadSpeedRefreshRunnable);
         playerManager.pause();
+        if (exitDialog != null && exitDialog.isShowing()) {
+            exitDialog.dismiss();
+        }
     }
 
     @Override

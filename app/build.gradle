@@ -51,9 +51,6 @@ dependencies {
     implementation "androidx.media3:media3-session:$media3_version"
     implementation "androidx.media3:media3-common:$media3_version"
 
-    // Leanback TV
-    implementation "androidx.leanback:leanback:1.2.0-alpha04"
-
     // Room
     implementation "androidx.room:room-runtime:2.6.1"
     annotationProcessor "androidx.room:room-compiler:2.6.1"

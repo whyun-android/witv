@@ -58,4 +58,5 @@
     <string name="media_info_sample_rate">采样率</string>
     <string name="media_info_channels">声道</string>
     <string name="media_info_waiting">获取中…</string>
+    <string name="no_playable_channel">暂无可播放频道，请先在设置中添加或启用播放源</string>
 </resources>
