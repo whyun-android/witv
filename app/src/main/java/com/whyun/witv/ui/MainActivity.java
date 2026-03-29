@@ -1,5 +1,6 @@
 package com.whyun.witv.ui;
 
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
@@ -38,6 +39,7 @@ public class MainActivity extends FragmentActivity implements SettingsPanelHost 
     private PreferenceManager preferenceManager;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private boolean autoPlayAttempted = false;
+    private AlertDialog exitDialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -225,12 +227,7 @@ public class MainActivity extends FragmentActivity implements SettingsPanelHost 
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (isSettingsPanelVisible()) {
             if (keyCode == KeyEvent.KEYCODE_BACK) {
-                SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
-                        .findFragmentByTag(TAG_SETTINGS_FRAGMENT);
-                if (f != null && f.handleBack()) {
-                    return true;
-                }
-                hideSettingsPanel();
+                handleSettingsBack();
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_F6) {
@@ -251,6 +248,10 @@ public class MainActivity extends FragmentActivity implements SettingsPanelHost 
                 return true;
             }
         }
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            showExitDialog();
+            return true;
+        }
         if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_F6) {
             showSettingsPanel();
             return true;
@@ -259,9 +260,51 @@ public class MainActivity extends FragmentActivity implements SettingsPanelHost 
     }
 
     @Override
+    public void onBackPressed() {
+        if (isSettingsPanelVisible()) {
+            handleSettingsBack();
+            return;
+        }
+        showExitDialog();
+    }
+
+    private void handleSettingsBack() {
+        SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
+                .findFragmentByTag(TAG_SETTINGS_FRAGMENT);
+        if (f != null && f.handleBack()) {
+            return;
+        }
+        hideSettingsPanel();
+    }
+
+    private void showExitDialog() {
+        if (isFinishing()) {
+            return;
+        }
+        if (exitDialog != null && exitDialog.isShowing()) {
+            return;
+        }
+        exitDialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.exit_dialog_title)
+                .setMessage(R.string.exit_dialog_message)
+                .setNegativeButton(R.string.settings, (dialog, which) -> showSettingsPanel())
+                .setPositiveButton(R.string.exit_dialog_rest, (dialog, which) -> finish())
+                .create();
+        exitDialog.setOnDismissListener(dialog -> exitDialog = null);
+        exitDialog.show();
+        Button restButton = exitDialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        if (restButton != null) {
+            restButton.post(restButton::requestFocus);
+        }
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
         hideSettingsPanel();
+        if (exitDialog != null && exitDialog.isShowing()) {
+            exitDialog.dismiss();
+        }
     }
 
     @Override
