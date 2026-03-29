@@ -39,6 +39,9 @@
     <string name="added_to_favorites">已添加到收藏</string>
     <string name="removed_from_favorites">已取消收藏</string>
     <string name="refresh_web_address">刷新</string>
+    <string name="exit_dialog_title">退出应用</string>
+    <string name="exit_dialog_message">要先去设置，还是休息一下？</string>
+    <string name="exit_dialog_rest">休息一下</string>
     <string name="auto_play_last">启动播放上次频道</string>
     <string name="reverse_channel_keys">反转换台键</string>
     <string name="reverse_channel_keys_hint">开启后上/下键切换频道的方向与默认相反</string>

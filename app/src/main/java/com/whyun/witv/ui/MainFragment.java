@@ -66,7 +66,7 @@ public class MainFragment extends BrowseSupportFragment {
         setSearchAffordanceColor(getResources().getColor(R.color.accent));
 
         setHeadersState(HEADERS_ENABLED);
-        setHeadersTransitionOnBackEnabled(true);
+        setHeadersTransitionOnBackEnabled(false);
 
         rowsAdapter = new ArrayObjectAdapter(new ListRowPresenter());
         setAdapter(rowsAdapter);
