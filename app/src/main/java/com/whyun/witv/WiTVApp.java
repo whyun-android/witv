@@ -1,6 +1,8 @@
 package com.whyun.witv;
 
 import android.app.Application;
+import android.os.Handler;
+import android.os.Looper;
 
 import androidx.annotation.OptIn;
 import androidx.media3.common.util.UnstableApi;
@@ -10,12 +12,17 @@ import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.player.PlayerManager;
 import com.whyun.witv.server.WebServer;
 
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
+
 public class WiTVApp extends Application {
 
     private static WiTVApp instance;
     private WebServer webServer;
     private DefaultBandwidthMeter bandwidthMeter;
     private volatile PlayerManager activePlayerManager;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Set<SourceChangeListener> sourceChangeListeners = new CopyOnWriteArraySet<>();
 
     @Override
     public void onCreate() {
@@ -55,6 +62,26 @@ public class WiTVApp extends Application {
         return activePlayerManager;
     }
 
+    public void addSourceChangeListener(SourceChangeListener listener) {
+        if (listener != null) {
+            sourceChangeListeners.add(listener);
+        }
+    }
+
+    public void removeSourceChangeListener(SourceChangeListener listener) {
+        if (listener != null) {
+            sourceChangeListeners.remove(listener);
+        }
+    }
+
+    public void notifyActiveSourceChanged(long sourceId) {
+        mainHandler.post(() -> {
+            for (SourceChangeListener listener : sourceChangeListeners) {
+                listener.onActiveSourceChanged(sourceId);
+            }
+        });
+    }
+
     private void startWebServer() {
         try {
             webServer = new WebServer(this, 9978);
@@ -66,6 +93,10 @@ public class WiTVApp extends Application {
 
     public WebServer getWebServer() {
         return webServer;
+    }
+
+    public interface SourceChangeListener {
+        void onActiveSourceChanged(long sourceId);
     }
 
     @Override

@@ -28,6 +28,10 @@ public interface SettingsPanelHost {
     default void onSourceSwitchTimeoutChanged() {
     }
 
+    /** 激活新的 M3U 源后，播放页可立即重载频道列表与当前播放。 */
+    default void onActiveM3USourceChanged(long sourceId) {
+    }
+
     /** 展示当前播放的媒体与 EPG 等信息（仅 {@link PlayerActivity} 实现）。 */
     default void showPlaybackMediaInfoDialog() {
     }

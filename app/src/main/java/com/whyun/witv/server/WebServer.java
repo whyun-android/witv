@@ -3,6 +3,7 @@ package com.whyun.witv.server;
 import android.content.Context;
 import android.content.res.AssetManager;
 
+import com.whyun.witv.WiTVApp;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.entity.Channel;
@@ -221,6 +222,7 @@ public class WebServer extends NanoHTTPD {
                     source.isActive = true;
                     channelRepo.loadSource(source);
                 }
+                WiTVApp.getInstance().notifyActiveSourceChanged(id);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -252,6 +254,9 @@ public class WebServer extends NanoHTTPD {
         new Thread(() -> {
             try {
                 channelRepo.loadSource(source);
+                if (source.isActive) {
+                    WiTVApp.getInstance().notifyActiveSourceChanged(id);
+                }
             } catch (Exception e) {
                 e.printStackTrace();
             }

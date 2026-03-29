@@ -54,7 +54,8 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class PlayerActivity extends FragmentActivity implements PlayerManager.Callback, SettingsPanelHost {
+public class PlayerActivity extends FragmentActivity implements PlayerManager.Callback,
+        SettingsPanelHost, WiTVApp.SourceChangeListener {
     private static final String CHANNEL_GROUP_FAVORITES = "我的收藏";
     private static final String CHANNEL_GROUP_ALL = "全部频道";
     private static final String CHANNEL_GROUP_UNCATEGORIZED = "未分类";
@@ -350,6 +351,78 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         updateWebAddress();
         switchingToast.setVisibility(View.GONE);
         loadAndPlay();
+    }
+
+    private void reloadForActiveSourceChange(long newSourceId) {
+        executor.execute(() -> {
+            AppDatabase db = AppDatabase.getInstance(this);
+            Channel previousChannel = currentChannel;
+            sourceId = newSourceId;
+            allChannels = newSourceId > 0 ? db.channelDao().getBySource(newSourceId) : new ArrayList<>();
+            Channel targetChannel = findBestChannelForSource(previousChannel, allChannels);
+            if (targetChannel == null && !allChannels.isEmpty()) {
+                targetChannel = allChannels.get(0);
+            }
+            currentChannel = targetChannel;
+            currentChannelId = targetChannel != null ? targetChannel.id : -1;
+            currentChannelIndex = 0;
+            if (targetChannel != null) {
+                for (int i = 0; i < allChannels.size(); i++) {
+                    if (allChannels.get(i).id == targetChannel.id) {
+                        currentChannelIndex = i;
+                        break;
+                    }
+                }
+            }
+            if (targetChannel != null) {
+                preferenceManager.saveLastChannel(targetChannel.id, newSourceId);
+                isFavorite = channelRepository.isFavorite(targetChannel.id);
+                List<ChannelSource> sources = channelRepository.getChannelSources(targetChannel.id);
+                runOnUiThread(() -> {
+                    showEmptyState(false);
+                    updateChannelInfo();
+                    dismissAllSourcesFailedToast();
+                    playerManager.playChannel(sources);
+                    showOverlayTemporarily();
+                });
+            } else {
+                runOnUiThread(() -> {
+                    showEmptyState(true);
+                    hideOverlay();
+                    switchingToast.setVisibility(View.GONE);
+                });
+            }
+        });
+    }
+
+    private Channel findBestChannelForSource(Channel previousChannel, List<Channel> channels) {
+        if (previousChannel == null || channels == null || channels.isEmpty()) {
+            return null;
+        }
+        for (Channel candidate : channels) {
+            if (sameChannelIdentity(previousChannel, candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private boolean sameChannelIdentity(Channel first, Channel second) {
+        if (first == null || second == null) {
+            return false;
+        }
+        if (isSameText(first.tvgId, second.tvgId)) {
+            return true;
+        }
+        if (isSameText(first.displayName, second.displayName)) {
+            return true;
+        }
+        return isSameText(first.tvgName, second.tvgName);
+    }
+
+    private boolean isSameText(String first, String second) {
+        return first != null && !first.trim().isEmpty()
+                && second != null && first.trim().equalsIgnoreCase(second.trim());
     }
 
     private void showEmptyState(boolean show) {
@@ -740,6 +813,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     @Override
+    public void onActiveM3USourceChanged(long sourceId) {
+        reloadForActiveSourceChange(sourceId);
+    }
+
+    @Override
     public void onSourceSwitchTimeoutChanged() {
         if (playerManager != null) {
             playerManager.rescheduleSourceTimeoutFromPreferences();
@@ -1096,9 +1174,6 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                         focusCurrentChannelRow();
                         return true;
                     }
-                    cancelChannelListIdleHide();
-                    hideOverlay();
-                    return true;
                 }
                 break;
             case KeyEvent.KEYCODE_DPAD_LEFT:
@@ -1236,6 +1311,18 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        WiTVApp.getInstance().addSourceChangeListener(this);
+    }
+
+    @Override
+    protected void onStop() {
+        WiTVApp.getInstance().removeSourceChangeListener(this);
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         handler.removeCallbacksAndMessages(null);
@@ -1246,6 +1333,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         WiTVApp.getInstance().setActivePlayerManager(null);
         playerManager.release();
         executor.shutdown();
+    }
+
+    @Override
+    public void onActiveSourceChanged(long sourceId) {
+        onActiveM3USourceChanged(sourceId);
     }
 
     private boolean isDescendantOf(View child, View parent) {

@@ -597,6 +597,7 @@ public class SettingsCollapsibleFragment extends Fragment
                     return;
                 }
                 Toast.makeText(requireContext(), "已切换到: " + source.name, Toast.LENGTH_SHORT).show();
+                host.onActiveM3USourceChanged(source.id);
                 refreshDataFromDb();
             });
         });
