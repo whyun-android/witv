@@ -1,6 +1,7 @@
 package com.whyun.witv.player;
 
 import android.net.Uri;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
@@ -13,6 +14,7 @@ import androidx.media3.datasource.TransferListener;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -23,38 +25,62 @@ import java.util.Map;
 @OptIn(markerClass = UnstableApi.class)
 public final class M3u8RewritingDataSource implements DataSource {
 
-    private final DataSource upstream;
+    private static final String TAG = "M3u8RewriteDs";
+
+    private final DataSource playlistUpstream;
+    private final DataSource mediaUpstream;
+    @Nullable
+    private final HlsSegmentPrefetcher segmentPrefetcher;
     private boolean rewriteMode;
     private byte[] rewrittenData;
     private int readPosition;
+    @Nullable
+    private DataSource activeUpstream;
     @Nullable
     private Uri openedUri;
     @Nullable
     private Map<String, List<String>> rewrittenResponseHeaders;
 
-    public M3u8RewritingDataSource(DataSource upstream) {
-        this.upstream = upstream;
+    public M3u8RewritingDataSource(DataSource playlistUpstream,
+                                   DataSource mediaUpstream,
+                                   @Nullable HlsSegmentPrefetcher segmentPrefetcher) {
+        this.playlistUpstream = playlistUpstream;
+        this.mediaUpstream = mediaUpstream;
+        this.segmentPrefetcher = segmentPrefetcher;
     }
 
     @Override
     public void addTransferListener(TransferListener transferListener) {
-        upstream.addTransferListener(transferListener);
+        playlistUpstream.addTransferListener(transferListener);
+        mediaUpstream.addTransferListener(transferListener);
     }
 
     @Override
     public long open(DataSpec dataSpec) throws IOException {
         close();
         openedUri = dataSpec.uri;
-        long upstreamLength = upstream.open(dataSpec);
         if (!isHlsPlaylistUri(dataSpec.uri)) {
             rewriteMode = false;
-            return upstreamLength;
+            activeUpstream = mediaUpstream;
+            return mediaUpstream.open(dataSpec);
         }
-        byte[] raw = readAll(upstream);
-        rewrittenResponseHeaders = upstream.getResponseHeaders();
-        upstream.close();
+        activeUpstream = playlistUpstream;
+        playlistUpstream.open(dataSpec);
+        byte[] raw = readAll(playlistUpstream);
+        rewrittenResponseHeaders = playlistUpstream.getResponseHeaders();
+        playlistUpstream.close();
+        activeUpstream = null;
         String text = new String(raw, StandardCharsets.UTF_8);
         String fixed = HlsMediaSequenceFixUtil.fixPlaylistIfNeeded(text);
+        if (!text.equals(fixed)) {
+            Log.d(TAG, "Playlist rewritten: " + dataSpec.uri);
+        } else {
+            Log.d(TAG, "Playlist unchanged: " + dataSpec.uri);
+        }
+        if (segmentPrefetcher != null) {
+            Log.d(TAG, "Trigger segment prefetch for playlist: " + dataSpec.uri);
+            segmentPrefetcher.prefetchPlaylistSegments(dataSpec.uri, fixed);
+        }
         rewrittenData = fixed.getBytes(StandardCharsets.UTF_8);
         readPosition = 0;
         rewriteMode = true;
@@ -85,7 +111,9 @@ public final class M3u8RewritingDataSource implements DataSource {
     @Override
     public int read(byte[] buffer, int offset, int readLength) throws IOException {
         if (!rewriteMode) {
-            return upstream.read(buffer, offset, readLength);
+            return activeUpstream != null
+                    ? activeUpstream.read(buffer, offset, readLength)
+                    : C.RESULT_END_OF_INPUT;
         }
         if (readPosition >= rewrittenData.length) {
             return C.RESULT_END_OF_INPUT;
@@ -102,7 +130,7 @@ public final class M3u8RewritingDataSource implements DataSource {
         if (rewriteMode) {
             return openedUri;
         }
-        return upstream.getUri();
+        return activeUpstream != null ? activeUpstream.getUri() : openedUri;
     }
 
     @Override
@@ -110,7 +138,7 @@ public final class M3u8RewritingDataSource implements DataSource {
         if (rewriteMode && rewrittenResponseHeaders != null) {
             return rewrittenResponseHeaders;
         }
-        return upstream.getResponseHeaders();
+        return activeUpstream != null ? activeUpstream.getResponseHeaders() : Collections.emptyMap();
     }
 
     @Override
@@ -123,20 +151,33 @@ public final class M3u8RewritingDataSource implements DataSource {
             openedUri = null;
             return;
         }
+        if (activeUpstream != null) {
+            activeUpstream.close();
+            activeUpstream = null;
+        }
         openedUri = null;
-        upstream.close();
     }
 
     public static final class Factory implements DataSource.Factory {
-        private final DataSource.Factory upstreamFactory;
+        private final DataSource.Factory playlistUpstreamFactory;
+        private final DataSource.Factory mediaUpstreamFactory;
+        @Nullable
+        private final HlsSegmentPrefetcher segmentPrefetcher;
 
-        public Factory(DataSource.Factory upstreamFactory) {
-            this.upstreamFactory = upstreamFactory;
+        public Factory(DataSource.Factory playlistUpstreamFactory,
+                       DataSource.Factory mediaUpstreamFactory,
+                       @Nullable HlsSegmentPrefetcher segmentPrefetcher) {
+            this.playlistUpstreamFactory = playlistUpstreamFactory;
+            this.mediaUpstreamFactory = mediaUpstreamFactory;
+            this.segmentPrefetcher = segmentPrefetcher;
         }
 
         @Override
         public DataSource createDataSource() {
-            return new M3u8RewritingDataSource(upstreamFactory.createDataSource());
+            return new M3u8RewritingDataSource(
+                    playlistUpstreamFactory.createDataSource(),
+                    mediaUpstreamFactory.createDataSource(),
+                    segmentPrefetcher);
         }
     }
 }

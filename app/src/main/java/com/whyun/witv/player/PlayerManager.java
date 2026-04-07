@@ -85,6 +85,8 @@ public class PlayerManager {
 
     private final Context context;
     private ExoPlayer player;
+    @Nullable
+    private HlsSegmentPrefetcher hlsSegmentPrefetcher;
     private PlayerView playerView;
     private Callback callback;
 
@@ -192,10 +194,14 @@ public class PlayerManager {
                 .setConnectTimeoutMs(HTTP_CONNECT_TIMEOUT_MS)
                 .setReadTimeoutMs(HTTP_READ_TIMEOUT_MS)
                 .setUserAgent(HTTP_USER_AGENT);
-        DefaultDataSource.Factory innerDataSourceFactory =
+        DefaultDataSource.Factory networkDataSourceFactory =
                 new DefaultDataSource.Factory(context, httpDataSourceFactory);
+        hlsSegmentPrefetcher = new HlsSegmentPrefetcher(context, networkDataSourceFactory);
         DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context,
-                new M3u8RewritingDataSource.Factory(innerDataSourceFactory));
+                new M3u8RewritingDataSource.Factory(
+                        networkDataSourceFactory,
+                        hlsSegmentPrefetcher.getPlaybackDataSourceFactory(),
+                        hlsSegmentPrefetcher));
         DefaultMediaSourceFactory mediaSourceFactory =
                 new DefaultMediaSourceFactory(dataSourceFactory);
 
@@ -424,6 +430,10 @@ public class PlayerManager {
 
     public void release() {
         cancelTimeout();
+        if (hlsSegmentPrefetcher != null) {
+            hlsSegmentPrefetcher.release();
+            hlsSegmentPrefetcher = null;
+        }
         if (player != null) {
             player.removeListener(playerListener);
             player.release();
