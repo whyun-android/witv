@@ -19,22 +19,37 @@ public final class HlsSegmentPrefetchPlanner {
     @NonNull
     public static List<Uri> planSegmentUris(@NonNull Uri playlistUri,
                                             @NonNull String playlistText,
-                                            int maxSegments) {
+                                            int maxSegments,
+                                            int skipTailSegments) {
         if (maxSegments <= 0 || playlistText.isEmpty()) {
             return Collections.emptyList();
         }
 
         List<Uri> allSegments = extractSegmentUris(playlistUri, playlistText);
+        return planSegmentUris(allSegments, maxSegments, skipTailSegments);
+    }
+
+    @NonNull
+    static List<Uri> planSegmentUris(@NonNull List<Uri> allSegments,
+                                     int maxSegments,
+                                     int skipTailSegments) {
         if (allSegments.isEmpty()) {
             return Collections.emptyList();
         }
 
-        int fromIndex = Math.max(0, allSegments.size() - maxSegments);
-        return new ArrayList<>(allSegments.subList(fromIndex, allSegments.size()));
+        int tailExclusive = Math.max(0, allSegments.size() - Math.max(0, skipTailSegments));
+        if (tailExclusive <= 0) {
+            return Collections.emptyList();
+        }
+        int fromIndex = Math.max(0, tailExclusive - maxSegments);
+        if (fromIndex >= tailExclusive) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>(allSegments.subList(fromIndex, tailExclusive));
     }
 
     @NonNull
-    private static List<Uri> extractSegmentUris(@NonNull Uri playlistUri, @NonNull String playlistText) {
+    static List<Uri> extractSegmentUris(@NonNull Uri playlistUri, @NonNull String playlistText) {
         List<Uri> result = new ArrayList<>();
         String[] lines = playlistText.split("\\r?\\n");
         boolean expectSegmentUri = false;

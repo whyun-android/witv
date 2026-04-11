@@ -55,6 +55,8 @@ public class PlayerManager {
 
     private static final int HTTP_CONNECT_TIMEOUT_MS = 12_000;
     private static final int HTTP_READ_TIMEOUT_MS = 45_000;
+    private static final int PREFETCH_HTTP_CONNECT_TIMEOUT_MS = 4_000;
+    private static final int PREFETCH_HTTP_READ_TIMEOUT_MS = 8_000;
 
     /** 固定 UA，避免部分 IPTV 源对默认 ExoPlayer/Media3 特征敏感。 */
     private static final String HTTP_USER_AGENT = "stagefright/1.2 (Linux;Android 7.1.2)";
@@ -196,7 +198,13 @@ public class PlayerManager {
                 .setUserAgent(HTTP_USER_AGENT);
         DefaultDataSource.Factory networkDataSourceFactory =
                 new DefaultDataSource.Factory(context, httpDataSourceFactory);
-        hlsSegmentPrefetcher = new HlsSegmentPrefetcher(context, networkDataSourceFactory);
+        DefaultHttpDataSource.Factory prefetchHttpDataSourceFactory = new DefaultHttpDataSource.Factory()
+                .setConnectTimeoutMs(PREFETCH_HTTP_CONNECT_TIMEOUT_MS)
+                .setReadTimeoutMs(PREFETCH_HTTP_READ_TIMEOUT_MS)
+                .setUserAgent(HTTP_USER_AGENT);
+        DefaultDataSource.Factory prefetchNetworkDataSourceFactory =
+                new DefaultDataSource.Factory(context, prefetchHttpDataSourceFactory);
+        hlsSegmentPrefetcher = new HlsSegmentPrefetcher(context, prefetchNetworkDataSourceFactory);
         DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context,
                 new M3u8RewritingDataSource.Factory(
                         networkDataSourceFactory,
@@ -240,6 +248,9 @@ public class PlayerManager {
     private void playCurrentSource() {
         if (currentSourceIndex >= currentSources.size()) {
             isRetrying = false;
+            if (hlsSegmentPrefetcher != null) {
+                hlsSegmentPrefetcher.onPlaybackSourceChanged(Uri.EMPTY);
+            }
             stopPlayer();
             Log.e(TAG, "All sources failed");
             if (callback != null) callback.onAllSourcesFailed();
@@ -253,6 +264,10 @@ public class PlayerManager {
         String url = currentSources.get(currentSourceIndex).url;
         Log.i(TAG, String.format(Locale.US, "Trying source %d/%d: %s",
                 currentSourceIndex + 1, currentSources.size(), url));
+        Uri uri = Uri.parse(url);
+        if (hlsSegmentPrefetcher != null) {
+            hlsSegmentPrefetcher.onPlaybackSourceChanged(uri);
+        }
 
         player.stop();
         player.clearMediaItems();
