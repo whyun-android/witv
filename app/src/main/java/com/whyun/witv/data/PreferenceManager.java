@@ -11,6 +11,8 @@ public class PreferenceManager {
     /** 上次成功开播时，在该频道多线路中的索引（0-based），未成功开播过则为 -1 */
     private static final String KEY_LAST_PLAY_STREAM_INDEX = "last_play_stream_index";
     private static final String KEY_AUTO_PLAY_LAST = "auto_play_last";
+    private static final String KEY_REFRESH_M3U_ON_STARTUP = "refresh_m3u_on_startup";
+    private static final String KEY_USE_DISK_CACHE_FOR_LIVE_TS = "use_disk_cache_for_live_ts";
     private static final String KEY_SHOW_LOAD_SPEED_OVERLAY = "show_load_speed_overlay";
     private static final String KEY_REVERSE_CHANNEL_KEYS = "reverse_channel_keys";
     private static final String KEY_SOURCE_SWITCH_TIMEOUT_MS = "source_switch_timeout_ms";
@@ -72,6 +74,22 @@ public class PreferenceManager {
 
     public boolean isAutoPlayLastEnabled() {
         return prefs.getBoolean(KEY_AUTO_PLAY_LAST, true);
+    }
+
+    public void setRefreshM3uOnStartup(boolean enabled) {
+        prefs.edit().putBoolean(KEY_REFRESH_M3U_ON_STARTUP, enabled).apply();
+    }
+
+    public boolean isRefreshM3uOnStartupEnabled() {
+        return prefs.getBoolean(KEY_REFRESH_M3U_ON_STARTUP, true);
+    }
+
+    public void setUseDiskCacheForLiveTs(boolean enabled) {
+        prefs.edit().putBoolean(KEY_USE_DISK_CACHE_FOR_LIVE_TS, enabled).apply();
+    }
+
+    public boolean isUseDiskCacheForLiveTsEnabled() {
+        return prefs.getBoolean(KEY_USE_DISK_CACHE_FOR_LIVE_TS, false);
     }
 
     /** 是否在播放画面右上角显示视频加载速度（带宽估算） */

@@ -27,13 +27,16 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 按播放器实际读取位置维护 ts 预取：请求 X 时预取 X+1..X+3，并清理 < X 的任务与磁盘缓存。
+ * 按播放器实际读取位置维护 ts 预取：请求全局序号 X 时预取 X+1..X+3，并清理 < X 的任务与磁盘缓存。
  * 使用 3 个固定 worker 槽位，不额外维护等待队列。
  */
 @OptIn(markerClass = UnstableApi.class)
@@ -65,12 +68,31 @@ public final class HlsSegmentPrefetcher {
     private final AtomicInteger playbackSourceGeneration = new AtomicInteger();
     /** 固定 3 个 worker 槽位，分别承载当前 X+1..X+3 的预取任务。 */
     private final WorkerSlot[] workerSlots = new WorkerSlot[PREFETCH_SEGMENT_COUNT];
-    /** 最新 playlist 中解析出的窗口分片 URI，按播放顺序排列。 */
-    private List<Uri> currentLiveWindowSegmentUris = Collections.emptyList();
-    /** 与 {@link #currentLiveWindowSegmentUris} 对应的 cache key 列表。 */
-    private List<String> currentLiveWindowCacheKeys = Collections.emptyList();
-    /** cache key 到窗口位置 X 的映射，便于播放器请求当前分片时定位游标。 */
-    private Map<String, Integer> currentLiveWindowIndexByCacheKey = Collections.emptyMap();
+    /** 当前播放源生命周期内稳定的分片全局序号：cache key -> sequence。 */
+    private final Map<String, Long> sequenceByCacheKey = new HashMap<>();
+    /** 便于按全局序号清理旧分片：sequence -> cache key。 */
+    private final NavigableMap<Long, String> cacheKeyBySequence = new TreeMap<>();
+    /** 最新 playlist 窗口中可见的分片：sequence -> uri。 */
+    private final NavigableMap<Long, Uri> liveWindowUriBySequence = new TreeMap<>();
+    /** 最新 playlist 窗口中可见的分片：sequence -> cache key。 */
+    private final NavigableMap<Long, String> liveWindowCacheKeyBySequence = new TreeMap<>();
+    /** 最新 playlist 窗口中可见的分片时长：sequence -> durationMs。 */
+    private final NavigableMap<Long, Long> liveWindowDurationMsBySequence = new TreeMap<>();
+    /** 当前播放源已知的分片时长：cache key -> durationMs。 */
+    private final Map<String, Long> durationMsByCacheKey = new HashMap<>();
+    /** 下一个待分配的全局分片序号。 */
+    private long nextSequenceId;
+    /** 最近一次实际播放命中的分片全局序号；用于 playlist 刷新后立即补预取。 */
+    private long lastPlaybackSequence = -1L;
+    /** 播放期内 ts 请求总数，用于计算累计缓存命中率。 */
+    private int playbackTsRequestCount;
+    /** 播放期内命中的 ts 请求数，用于计算累计缓存命中率。 */
+    private int playbackTsCacheHitCount;
+
+    private enum SequenceSource {
+        MEDIA_SEQUENCE,
+        FALLBACK
+    }
 
     public HlsSegmentPrefetcher(@NonNull Context context, @NonNull DataSource.Factory upstreamFactory) {
         WiTVApp app = (WiTVApp) context.getApplicationContext();
@@ -96,40 +118,92 @@ public final class HlsSegmentPrefetcher {
         int generation = playbackSourceGeneration.incrementAndGet();
         Log.d(TAG, "Playback source changed, clear tracked cache: generation="
                 + generation + ", uri=" + playbackUri);
-        resetLiveWindowTracking();
+        resetSourceTracking();
         cancelAllPrefetchTasks();
         clearCurrentSourceCache();
     }
 
     public void updateLiveWindow(@NonNull Uri playlistUri, @NonNull String playlistText) {
-        List<Uri> liveWindowSegmentUris = HlsSegmentPrefetchPlanner.extractSegmentUris(
-                playlistUri, playlistText);
-        List<String> liveWindowCacheKeys = new ArrayList<>(liveWindowSegmentUris.size());
-        Map<String, Integer> indexByCacheKey = new HashMap<>();
-        for (int i = 0; i < liveWindowSegmentUris.size(); i++) {
-            Uri liveWindowSegmentUri = liveWindowSegmentUris.get(i);
-            String cacheKey = buildCacheKey(liveWindowSegmentUri);
-            if (cacheKey.isEmpty()) {
-                continue;
-            }
-            liveWindowCacheKeys.add(cacheKey);
-            indexByCacheKey.put(cacheKey, i);
-            currentSourceCacheKeys.add(cacheKey);
-        }
+        NavigableMap<Long, Uri> nextWindowUriBySequence = new TreeMap<>();
+        NavigableMap<Long, String> nextWindowCacheKeyBySequence = new TreeMap<>();
+        NavigableMap<Long, Long> nextWindowDurationMsBySequence = new TreeMap<>();
+        SequenceSource sequenceSource = SequenceSource.MEDIA_SEQUENCE;
+        long playbackSequenceSnapshot;
+        NavigableMap<Long, HlsSegmentPrefetchPlanner.SegmentInfo> mediaSequenceWindow =
+                HlsSegmentPrefetchPlanner.extractSegmentInfosByMediaSequence(playlistUri, playlistText);
         synchronized (liveWindowLock) {
-            currentLiveWindowSegmentUris = new ArrayList<>(liveWindowSegmentUris);
-            currentLiveWindowCacheKeys = liveWindowCacheKeys;
-            currentLiveWindowIndexByCacheKey = indexByCacheKey;
+            if (!mediaSequenceWindow.isEmpty()) {
+                for (Map.Entry<Long, HlsSegmentPrefetchPlanner.SegmentInfo> entry : mediaSequenceWindow.entrySet()) {
+                    long sequence = entry.getKey();
+                    HlsSegmentPrefetchPlanner.SegmentInfo segmentInfo = entry.getValue();
+                    Uri liveWindowSegmentUri = segmentInfo.uri;
+                    String cacheKey = buildCacheKey(liveWindowSegmentUri);
+                    if (cacheKey.isEmpty()) {
+                        continue;
+                    }
+                    sequenceByCacheKey.put(cacheKey, sequence);
+                    cacheKeyBySequence.put(sequence, cacheKey);
+                    durationMsByCacheKey.put(cacheKey, segmentInfo.durationMs);
+                    nextWindowUriBySequence.put(sequence, liveWindowSegmentUri);
+                    nextWindowCacheKeyBySequence.put(sequence, cacheKey);
+                    nextWindowDurationMsBySequence.put(sequence, segmentInfo.durationMs);
+                    currentSourceCacheKeys.add(cacheKey);
+                }
+                nextSequenceId = Math.max(nextSequenceId,
+                        mediaSequenceWindow.lastKey() + 1L);
+            } else {
+                sequenceSource = SequenceSource.FALLBACK;
+                List<Uri> liveWindowSegmentUris = HlsSegmentPrefetchPlanner.extractSegmentUris(
+                        playlistUri, playlistText);
+                for (Uri liveWindowSegmentUri : liveWindowSegmentUris) {
+                    String cacheKey = buildCacheKey(liveWindowSegmentUri);
+                    if (cacheKey.isEmpty()) {
+                        continue;
+                    }
+                    Long sequence = sequenceByCacheKey.get(cacheKey);
+                    if (sequence == null) {
+                        sequence = nextSequenceId++;
+                        sequenceByCacheKey.put(cacheKey, sequence);
+                        cacheKeyBySequence.put(sequence, cacheKey);
+                    }
+                    durationMsByCacheKey.put(cacheKey, 0L);
+                    nextWindowUriBySequence.put(sequence, liveWindowSegmentUri);
+                    nextWindowCacheKeyBySequence.put(sequence, cacheKey);
+                    nextWindowDurationMsBySequence.put(sequence, 0L);
+                    currentSourceCacheKeys.add(cacheKey);
+                }
+            }
+            liveWindowUriBySequence.clear();
+            liveWindowUriBySequence.putAll(nextWindowUriBySequence);
+            liveWindowCacheKeyBySequence.clear();
+            liveWindowCacheKeyBySequence.putAll(nextWindowCacheKeyBySequence);
+            liveWindowDurationMsBySequence.clear();
+            liveWindowDurationMsBySequence.putAll(nextWindowDurationMsBySequence);
+            playbackSequenceSnapshot = lastPlaybackSequence;
         }
         Log.d(TAG, "Live window updated: playlist=" + playlistUri
-                + ", segmentCount=" + liveWindowCacheKeys.size());
+                + ", segmentCount=" + nextWindowCacheKeyBySequence.size()
+                + ", sequenceRange=" + summarizeSequenceRange(nextWindowCacheKeyBySequence)
+                + ", sequenceSource=" + sequenceSource.name().toLowerCase(Locale.US));
+        if (playbackSequenceSnapshot >= 0L) {
+            Log.d(TAG, "Live window refresh triggers prefetch reconcile: X="
+                    + playbackSequenceSnapshot);
+            reconcileWorkersForPlaybackSequence(playbackSequenceSnapshot);
+        }
     }
 
-    private void resetLiveWindowTracking() {
+    private void resetSourceTracking() {
         synchronized (liveWindowLock) {
-            currentLiveWindowSegmentUris = Collections.emptyList();
-            currentLiveWindowCacheKeys = Collections.emptyList();
-            currentLiveWindowIndexByCacheKey = Collections.emptyMap();
+            sequenceByCacheKey.clear();
+            cacheKeyBySequence.clear();
+            liveWindowUriBySequence.clear();
+            liveWindowCacheKeyBySequence.clear();
+            liveWindowDurationMsBySequence.clear();
+            durationMsByCacheKey.clear();
+            nextSequenceId = 0L;
+            lastPlaybackSequence = -1L;
+            playbackTsRequestCount = 0;
+            playbackTsCacheHitCount = 0;
         }
     }
 
@@ -143,36 +217,50 @@ public final class HlsSegmentPrefetcher {
         if (busy) {
             clearCachedResource(cacheKey, "Playback bypass unfinished prefetch");
         }
-        int currentIndex = getLiveWindowIndex(cacheKey);
-        if (currentIndex < 0) {
+        long currentSequence = getSequence(cacheKey);
+        if (currentSequence < 0L) {
             Log.d(TAG, "Playback segment not found in latest live window: " + segmentUri);
             return busy;
         }
-        Log.d(TAG, "Playback cursor: X=" + currentIndex
+        Log.d(TAG, "Playback cursor: X=" + currentSequence
                 + ", current=" + compactSegmentLabel(cacheKey)
                 + ", bypassCache=" + busy
                 + ", windowSize=" + getLiveWindowSize());
-        clearSegmentsBeforeIndex(currentIndex);
-        reconcileWorkersForPlaybackIndex(currentIndex);
+        synchronized (liveWindowLock) {
+            lastPlaybackSequence = currentSequence;
+        }
+        clearSegmentsBeforeSequence(currentSequence);
+        reconcileWorkersForPlaybackSequence(currentSequence);
         return busy;
     }
 
-    private int getLiveWindowIndex(@NonNull String cacheKey) {
+    private long getSequence(@NonNull String cacheKey) {
         synchronized (liveWindowLock) {
-            Integer index = currentLiveWindowIndexByCacheKey.get(cacheKey);
-            return index != null ? index : -1;
+            Long sequence = sequenceByCacheKey.get(cacheKey);
+            return sequence != null ? sequence : -1L;
         }
     }
 
-    private void clearSegmentsBeforeIndex(int currentIndex) {
+    private void clearSegmentsBeforeSequence(long currentSequence) {
         List<String> staleCacheKeys;
         synchronized (liveWindowLock) {
-            if (currentIndex <= 0 || currentLiveWindowCacheKeys.isEmpty()) {
+            if (currentSequence <= 0L || cacheKeyBySequence.isEmpty()) {
                 return;
             }
-            staleCacheKeys = new ArrayList<>(currentLiveWindowCacheKeys.subList(0, currentIndex));
+            staleCacheKeys = new ArrayList<>(cacheKeyBySequence.headMap(currentSequence, false).values());
+            if (staleCacheKeys.isEmpty()) {
+                return;
+            }
+            for (String staleCacheKey : staleCacheKeys) {
+                sequenceByCacheKey.remove(staleCacheKey);
+                durationMsByCacheKey.remove(staleCacheKey);
+            }
+            cacheKeyBySequence.headMap(currentSequence, false).clear();
+            liveWindowUriBySequence.headMap(currentSequence, false).clear();
+            liveWindowCacheKeyBySequence.headMap(currentSequence, false).clear();
+            liveWindowDurationMsBySequence.headMap(currentSequence, false).clear();
         }
-        Log.d(TAG, "Evict stale segments before X=" + currentIndex
+        Log.d(TAG, "Evict stale segments before X=" + currentSequence
                 + ": " + summarizeCacheKeys(staleCacheKeys));
         for (String staleCacheKey : staleCacheKeys) {
             for (WorkerSlot workerSlot : workerSlots) {
@@ -182,18 +270,20 @@ public final class HlsSegmentPrefetcher {
         }
     }
 
-    private void reconcileWorkersForPlaybackIndex(int currentIndex) {
+    private void reconcileWorkersForPlaybackSequence(long currentSequence) {
         List<Uri> desiredSegmentUris = new ArrayList<>(PREFETCH_SEGMENT_COUNT);
         synchronized (liveWindowLock) {
-            if (currentLiveWindowSegmentUris.isEmpty()) {
+            if (liveWindowUriBySequence.isEmpty()) {
                 clearAllWorkers("No live window segments to prefetch");
                 return;
             }
-            int endExclusive = Math.min(
-                    currentLiveWindowSegmentUris.size(),
-                    currentIndex + 1 + PREFETCH_SEGMENT_COUNT);
-            for (int i = currentIndex + 1; i < endExclusive; i++) {
-                Uri segmentUri = currentLiveWindowSegmentUris.get(i);
+            for (long sequence = currentSequence + 1L;
+                 sequence <= currentSequence + PREFETCH_SEGMENT_COUNT;
+                 sequence++) {
+                Uri segmentUri = liveWindowUriBySequence.get(sequence);
+                if (segmentUri == null) {
+                    continue;
+                }
                 desiredSegmentUris.add(segmentUri);
                 currentSourceCacheKeys.add(buildCacheKey(segmentUri));
             }
@@ -202,7 +292,7 @@ public final class HlsSegmentPrefetcher {
             clearAllWorkers("No forward segments after playback cursor");
             return;
         }
-        Log.d(TAG, "Prefetch targets for X=" + currentIndex + ": "
+        Log.d(TAG, "Prefetch targets for X=" + currentSequence + ": "
                 + summarizeUris(desiredSegmentUris));
 
         int generation = playbackSourceGeneration.get();
@@ -241,7 +331,9 @@ public final class HlsSegmentPrefetcher {
         String cacheKey = assignment.cacheKey;
         Uri segmentUri = assignment.segmentUri;
         int generation = assignment.generation;
+        long segmentDurationMs = getSegmentDurationMs(cacheKey);
         boolean evictPartialCache = false;
+        long downloadStartMs = 0L;
         try {
             if (cacheKey.isEmpty() || segmentUri == null) {
                 return;
@@ -261,7 +353,9 @@ public final class HlsSegmentPrefetcher {
                 return;
             }
             workerSlot.markExecuting(cacheKey, generation);
-            Log.d(TAG, "Prefetch start: " + segmentUri);
+            downloadStartMs = System.currentTimeMillis();
+            Log.d(TAG, "Prefetch start: " + segmentUri
+                    + ", segmentDuration=" + formatDurationMs(segmentDurationMs));
             DataSpec dataSpec = new DataSpec.Builder()
                     .setUri(segmentUri)
                     .setKey(cacheKey)
@@ -283,15 +377,31 @@ public final class HlsSegmentPrefetcher {
                 return;
             }
             workerSlot.markCompleted(cacheKey, generation);
-            Log.d(TAG, "Prefetch success: " + segmentUri);
+            long downloadCostMs = Math.max(0L, System.currentTimeMillis() - downloadStartMs);
+            Log.d(TAG, "Prefetch success: " + segmentUri
+                    + ", segmentDuration=" + formatDurationMs(segmentDurationMs)
+                    + ", downloadCost=" + formatDurationMs(downloadCostMs)
+                    + ", speedRatio=" + formatSpeedRatio(downloadCostMs, segmentDurationMs));
         } catch (IOException | RuntimeException e) {
             if (Thread.currentThread().isInterrupted() || isCancellationException(e)) {
                 evictPartialCache = true;
+                long downloadCostMs = downloadStartMs > 0L
+                        ? Math.max(0L, System.currentTimeMillis() - downloadStartMs)
+                        : 0L;
                 Log.d(TAG, "Prefetch cancelled: " + segmentUri + ", reason="
-                        + cancellationReasonName(e));
+                        + cancellationReasonName(e)
+                        + ", segmentDuration=" + formatDurationMs(segmentDurationMs)
+                        + ", downloadCost=" + formatDurationMs(downloadCostMs)
+                        + ", speedRatio=" + formatSpeedRatio(downloadCostMs, segmentDurationMs));
                 return;
             }
-            Log.d(TAG, "Prefetch failed: " + segmentUri, e);
+            long downloadCostMs = downloadStartMs > 0L
+                    ? Math.max(0L, System.currentTimeMillis() - downloadStartMs)
+                    : 0L;
+            Log.d(TAG, "Prefetch failed: " + segmentUri
+                    + ", segmentDuration=" + formatDurationMs(segmentDurationMs)
+                    + ", downloadCost=" + formatDurationMs(downloadCostMs)
+                    + ", speedRatio=" + formatSpeedRatio(downloadCostMs, segmentDurationMs), e);
         } finally {
             workerSlot.clearExecuting(cacheKey, generation);
             if (evictPartialCache || generation != playbackSourceGeneration.get()) {
@@ -379,6 +489,44 @@ public final class HlsSegmentPrefetcher {
         return !cache.getCachedSpans(cacheKey).isEmpty();
     }
 
+    private long getSegmentDurationMs(@NonNull String cacheKey) {
+        synchronized (liveWindowLock) {
+            Long durationMs = durationMsByCacheKey.get(cacheKey);
+            return durationMs != null ? durationMs : 0L;
+        }
+    }
+
+    private void recordPlaybackCacheRequest(@NonNull String cacheKey,
+                                            boolean cacheHit,
+                                            boolean bypassCache) {
+        int hits;
+        int total;
+        synchronized (liveWindowLock) {
+            playbackTsRequestCount++;
+            if (cacheHit) {
+                playbackTsCacheHitCount++;
+            }
+            hits = playbackTsCacheHitCount;
+            total = playbackTsRequestCount;
+        }
+        double hitRate = total > 0 ? (hits * 100d / total) : 0d;
+        Log.d(TAG, String.format(Locale.US,
+                "Playback cache stats: segment=%s, cacheHit=%s, bypassCache=%s, hitRate=%.2f%% (%d/%d)",
+                compactSegmentLabel(cacheKey), cacheHit, bypassCache, hitRate, hits, total));
+    }
+
+    @NonNull
+    private String snapshotPlaybackCacheHitRate() {
+        int hits;
+        int total;
+        synchronized (liveWindowLock) {
+            hits = playbackTsCacheHitCount;
+            total = playbackTsRequestCount;
+        }
+        double hitRate = total > 0 ? (hits * 100d / total) : 0d;
+        return String.format(Locale.US, "%.2f%% (%d/%d)", hitRate, hits, total);
+    }
+
     private static boolean isTsSegmentUri(@NonNull Uri uri) {
         String value = uri.toString().toLowerCase();
         return value.endsWith(".ts") || value.contains(".ts?");
@@ -398,10 +546,31 @@ public final class HlsSegmentPrefetcher {
         return cacheKey;
     }
 
+    @NonNull
+    private static String formatDurationMs(long durationMs) {
+        return String.format(Locale.US, "%.3fs", Math.max(0L, durationMs) / 1000d);
+    }
+
+    @NonNull
+    private static String formatSpeedRatio(long downloadCostMs, long segmentDurationMs) {
+        if (downloadCostMs <= 0L || segmentDurationMs <= 0L) {
+            return "n/a";
+        }
+        return String.format(Locale.US, "%.2fx", segmentDurationMs / (double) downloadCostMs);
+    }
+
     private int getLiveWindowSize() {
         synchronized (liveWindowLock) {
-            return currentLiveWindowCacheKeys.size();
+            return liveWindowCacheKeyBySequence.size();
         }
+    }
+
+    @NonNull
+    private static String summarizeSequenceRange(@NonNull NavigableMap<Long, ?> sequenceMap) {
+        if (sequenceMap.isEmpty()) {
+            return "[]";
+        }
+        return "[" + sequenceMap.firstKey() + ".." + sequenceMap.lastKey() + "]";
     }
 
     @NonNull
@@ -446,7 +615,8 @@ public final class HlsSegmentPrefetcher {
                     public void onCachedBytesRead(long cacheSizeBytes, long cachedBytesRead) {
                         if (cachedBytesRead > 0) {
                             Log.d(TAG, "Playback cache hit: read " + cachedBytesRead
-                                    + " byte(s) from cache, cacheSize=" + cacheSizeBytes);
+                                    + " byte(s) from cache, cacheSize=" + cacheSizeBytes
+                                    + ", hitRate=" + snapshotPlaybackCacheHitRate());
                         }
                     }
 
@@ -472,7 +642,7 @@ public final class HlsSegmentPrefetcher {
     }
 
     public void release() {
-        resetLiveWindowTracking();
+        resetSourceTracking();
         cancelAllPrefetchTasks();
         clearCurrentSourceCache();
         for (WorkerSlot workerSlot : workerSlots) {
@@ -503,15 +673,23 @@ public final class HlsSegmentPrefetcher {
             close();
             String cacheKey = buildCacheKey(dataSpec.uri);
             boolean bypassCache = false;
-            if (!cacheKey.isEmpty() && isTsSegmentUri(dataSpec.uri)) {
+            boolean isTsRequest = !cacheKey.isEmpty() && isTsSegmentUri(dataSpec.uri);
+            if (isTsRequest) {
                 bypassCache = onPlaybackSegmentRequested(dataSpec.uri);
             }
             if (bypassCache) {
+                if (isTsRequest) {
+                    recordPlaybackCacheRequest(cacheKey, false, true);
+                }
                 Log.d(TAG, "Playback open via upstream only: " + dataSpec.uri);
                 activeDelegate = upstreamDelegate;
                 return activeDelegate.open(dataSpec);
             }
-            if (!cacheKey.isEmpty() && isAlreadyCached(cacheKey)) {
+            boolean cacheHit = isTsRequest && isAlreadyCached(cacheKey);
+            if (isTsRequest) {
+                recordPlaybackCacheRequest(cacheKey, cacheHit, false);
+            }
+            if (cacheHit) {
                 Log.d(TAG, "Playback open with cached span ready: " + dataSpec.uri);
             } else {
                 Log.d(TAG, "Playback open without cache hit: " + dataSpec.uri);

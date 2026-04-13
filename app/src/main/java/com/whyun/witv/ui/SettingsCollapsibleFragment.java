@@ -467,6 +467,16 @@ public class SettingsCollapsibleFragment extends Fragment
                 rows.add(new SettingsPanelAdapter.CheckRow(SettingsPanelAdapter.CheckRow.Kind.AUTO_PLAY,
                         preferenceManager.isAutoPlayLastEnabled(),
                         ctx.getString(R.string.auto_play_last), null));
+                rows.add(new SettingsPanelAdapter.CheckRow(
+                        SettingsPanelAdapter.CheckRow.Kind.REFRESH_M3U_ON_STARTUP,
+                        preferenceManager.isRefreshM3uOnStartupEnabled(),
+                        ctx.getString(R.string.refresh_m3u_on_startup),
+                        ctx.getString(R.string.refresh_m3u_on_startup_hint)));
+                rows.add(new SettingsPanelAdapter.CheckRow(
+                        SettingsPanelAdapter.CheckRow.Kind.USE_DISK_CACHE_FOR_LIVE_TS,
+                        preferenceManager.isUseDiskCacheForLiveTsEnabled(),
+                        ctx.getString(R.string.use_disk_cache_for_live_ts),
+                        ctx.getString(R.string.use_disk_cache_for_live_ts_hint)));
                 rows.add(new SettingsPanelAdapter.CheckRow(SettingsPanelAdapter.CheckRow.Kind.LOAD_SPEED,
                         preferenceManager.isShowLoadSpeedOverlay(),
                         ctx.getString(R.string.show_load_speed_overlay),
@@ -666,6 +676,22 @@ public class SettingsCollapsibleFragment extends Fragment
                 checked ? "已开启播放页加载速度显示" : "已关闭播放页加载速度显示",
                 Toast.LENGTH_SHORT).show();
         host.onPlaybackOverlayPreferenceChanged();
+    }
+
+    @Override
+    public void onRefreshM3uOnStartup(boolean checked) {
+        preferenceManager.setRefreshM3uOnStartup(checked);
+        Toast.makeText(requireContext(),
+                checked ? "已开启启动时刷新 M3U 直播源" : "已关闭启动时刷新 M3U 直播源",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onUseDiskCacheForLiveTs(boolean checked) {
+        preferenceManager.setUseDiskCacheForLiveTs(checked);
+        Toast.makeText(requireContext(),
+                checked ? "已开启直播分片硬盘缓存" : "已关闭直播分片硬盘缓存",
+                Toast.LENGTH_SHORT).show();
     }
 
     @Override

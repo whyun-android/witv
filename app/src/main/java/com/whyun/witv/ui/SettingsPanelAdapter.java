@@ -111,7 +111,7 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
 
     public static final class CheckRow extends Row {
         enum Kind {
-            AUTO_PLAY, LOAD_SPEED, REVERSE_CHANNEL_KEYS
+            AUTO_PLAY, REFRESH_M3U_ON_STARTUP, USE_DISK_CACHE_FOR_LIVE_TS, LOAD_SPEED, REVERSE_CHANNEL_KEYS
         }
 
         final Kind kind;
@@ -174,6 +174,10 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         void onStreamSwitch(int index);
 
         void onAutoPlay(boolean checked);
+
+        void onRefreshM3uOnStartup(boolean checked);
+
+        void onUseDiskCacheForLiveTs(boolean checked);
 
         void onLoadSpeed(boolean checked);
 
@@ -392,6 +396,12 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
                 switch (row.kind) {
                     case AUTO_PLAY:
                         listener.onAutoPlay(isChecked);
+                        break;
+                    case REFRESH_M3U_ON_STARTUP:
+                        listener.onRefreshM3uOnStartup(isChecked);
+                        break;
+                    case USE_DISK_CACHE_FOR_LIVE_TS:
+                        listener.onUseDiskCacheForLiveTs(isChecked);
                         break;
                     case LOAD_SPEED:
                         listener.onLoadSpeed(isChecked);

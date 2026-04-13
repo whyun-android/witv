@@ -43,6 +43,10 @@
     <string name="exit_dialog_message">要先去设置，还是休息一下？</string>
     <string name="exit_dialog_rest">休息一下</string>
     <string name="auto_play_last">启动播放上次频道</string>
+    <string name="refresh_m3u_on_startup">启动时刷新 M3U 直播源</string>
+    <string name="refresh_m3u_on_startup_hint">开启后进入播放页时先刷新当前激活的 M3U 订阅，再使用最新频道列表起播；刷新失败时仍回退到本地缓存</string>
+    <string name="use_disk_cache_for_live_ts">使用硬盘缓存预取直播分片</string>
+    <string name="use_disk_cache_for_live_ts_hint">开启后为直播 ts 分片启用磁盘预取与缓存命中；关闭时仍保留 m3u8 修正，但 ts 直接走网络数据源</string>
     <string name="reverse_channel_keys">反转换台键</string>
     <string name="reverse_channel_keys_hint">开启后上/下键切换频道的方向与默认相反</string>
     <string name="show_load_speed_overlay">播放页显示视频加载速度</string>

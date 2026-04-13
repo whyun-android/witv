@@ -314,6 +314,9 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private void loadAndPlay() {
         executor.execute(() -> {
             AppDatabase db = AppDatabase.getInstance(this);
+            if (preferenceManager.isRefreshM3uOnStartupEnabled()) {
+                tryRefreshActiveM3uSource(db);
+            }
             currentChannel = resolveInitialChannel(db);
             allChannels = sourceId > 0 ? db.channelDao().getBySource(sourceId) : new ArrayList<>();
 
@@ -345,6 +348,19 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 });
             }
         });
+    }
+
+    private void tryRefreshActiveM3uSource(AppDatabase db) {
+        com.whyun.witv.data.db.entity.M3USource activeSource = db.m3uSourceDao().getActive();
+        if (activeSource == null || activeSource.url == null || activeSource.url.isEmpty()) {
+            return;
+        }
+        try {
+            channelRepository.loadSource(activeSource);
+        } catch (Exception e) {
+            // Keep existing channel cache if startup refresh fails.
+            android.util.Log.w("PlayerActivity", "Failed to refresh active M3U on startup", e);
+        }
     }
 
     private void reloadInitialChannel() {

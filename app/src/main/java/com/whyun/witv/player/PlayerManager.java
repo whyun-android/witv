@@ -15,6 +15,7 @@ import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
@@ -182,6 +183,7 @@ public class PlayerManager {
     @OptIn(markerClass = UnstableApi.class)
     public void initialize(PlayerView playerView) {
         this.playerView = playerView;
+        PreferenceManager preferenceManager = new PreferenceManager(context);
 
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
@@ -204,11 +206,22 @@ public class PlayerManager {
                 .setUserAgent(HTTP_USER_AGENT);
         DefaultDataSource.Factory prefetchNetworkDataSourceFactory =
                 new DefaultDataSource.Factory(context, prefetchHttpDataSourceFactory);
-        hlsSegmentPrefetcher = new HlsSegmentPrefetcher(context, prefetchNetworkDataSourceFactory);
+        boolean useDiskCacheForLiveTs = preferenceManager.isUseDiskCacheForLiveTsEnabled();
+        hlsSegmentPrefetcher = useDiskCacheForLiveTs
+                ? new HlsSegmentPrefetcher(context, prefetchNetworkDataSourceFactory)
+                : null;
+        if (useDiskCacheForLiveTs) {
+            Log.i(TAG, "Live ts disk cache is enabled");
+        } else {
+            Log.i(TAG, "Live ts disk cache is disabled; keep m3u8 rewrite only");
+        }
+        DataSource.Factory mediaDataSourceFactory = hlsSegmentPrefetcher != null
+                ? hlsSegmentPrefetcher.getPlaybackDataSourceFactory()
+                : networkDataSourceFactory;
         DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context,
                 new M3u8RewritingDataSource.Factory(
                         networkDataSourceFactory,
-                        hlsSegmentPrefetcher.getPlaybackDataSourceFactory(),
+                        mediaDataSourceFactory,
                         hlsSegmentPrefetcher));
         DefaultMediaSourceFactory mediaSourceFactory =
                 new DefaultMediaSourceFactory(dataSourceFactory);
