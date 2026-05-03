@@ -1152,6 +1152,23 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         });
     }
 
+    private boolean handleChannelListBack() {
+        if (!isChannelListPanelVisible()) {
+            return false;
+        }
+        View focused = getCurrentFocus();
+        if (focused != null && channelListOverlay != null && isDescendantOf(focused, channelListOverlay)) {
+            focusSelectedGroupRow();
+            return true;
+        }
+        cancelChannelListIdleHide();
+        channelListPanel.setVisibility(View.GONE);
+        if (playerView != null) {
+            playerView.requestFocus();
+        }
+        return true;
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (isSettingsPanelVisible()) {
@@ -1234,12 +1251,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 }
                 break;
             case KeyEvent.KEYCODE_BACK:
-                if (isChannelListPanelVisible()) {
-                    cancelChannelListIdleHide();
-                    channelListPanel.setVisibility(View.GONE);
-                    if (playerView != null) {
-                        playerView.requestFocus();
-                    }
+                if (handleChannelListBack()) {
                     return true;
                 }
                 showExitDialog();
@@ -1307,11 +1319,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             return;
         }
         if (isChannelListPanelVisible()) {
-            cancelChannelListIdleHide();
-            channelListPanel.setVisibility(View.GONE);
-            if (playerView != null) {
-                playerView.requestFocus();
-            }
+            handleChannelListBack();
             return;
         }
         showExitDialog();
