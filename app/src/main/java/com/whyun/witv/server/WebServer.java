@@ -202,7 +202,30 @@ public class WebServer extends NanoHTTPD {
         if (source == null) {
             return jsonError(Response.Status.NOT_FOUND, "Source not found");
         }
+        boolean wasActive = source.isActive;
         db.m3uSourceDao().delete(source);
+        if (wasActive) {
+            List<M3USource> remaining = db.m3uSourceDao().getAll();
+            if (!remaining.isEmpty()) {
+                M3USource next = remaining.get(0);
+                db.m3uSourceDao().deactivateAll();
+                db.m3uSourceDao().activate(next.id);
+                new Thread(() -> {
+                    try {
+                        List<Channel> existing = db.channelDao().getBySource(next.id);
+                        if (existing.isEmpty()) {
+                            next.isActive = true;
+                            channelRepo.loadSource(next);
+                        }
+                        WiTVApp.getInstance().notifyActiveSourceChanged(next.id);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }).start();
+            } else {
+                WiTVApp.getInstance().notifyActiveSourceChanged(-1L);
+            }
+        }
         return jsonOk("{\"success\":true}");
     }
 

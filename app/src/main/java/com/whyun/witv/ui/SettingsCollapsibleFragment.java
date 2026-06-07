@@ -152,7 +152,8 @@ public class SettingsCollapsibleFragment extends Fragment
     @Override
     public void onDestroy() {
         super.onDestroy();
-        cancelPendingSubmenuOpen();
+        focusHandler.removeCallbacksAndMessages(null);
+        pendingSubmenuOpen = null;
         executor.shutdown();
     }
 
@@ -209,13 +210,17 @@ public class SettingsCollapsibleFragment extends Fragment
             return;
         }
 
-        // 右侧主菜单按左键：如果子菜单已展开，显式将焦点移入子菜单首项
+        // 右侧主菜单按左键：显式打开/进入当前分类的子菜单
         if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT
-                && openCategory != 0
-                && submenuContainer != null
-                && submenuContainer.getVisibility() == View.VISIBLE
+                && mainMenuAdapter != null
                 && isDescendant(mainMenuRecycler, focused)) {
-            focusSubmenuFirstItem();
+            View menuItem = findDirectChildOf(mainMenuRecycler, focused);
+            int categoryId = mainMenuAdapter.categoryIdAtPosition(
+                    menuItem != null ? mainMenuRecycler.getChildAdapterPosition(menuItem)
+                            : RecyclerView.NO_POSITION);
+            if (categoryId != 0) {
+                onMainMenuItemClick(categoryId);
+            }
             return;
         }
 
@@ -234,22 +239,41 @@ public class SettingsCollapsibleFragment extends Fragment
             return;
         }
         submenuRecycler.post(() -> {
-            if (submenuRecycler.getChildCount() > 0) {
-                View first = submenuRecycler.getChildAt(0);
-                if (first.isFocusable()) {
-                    first.requestFocus();
-                } else {
-                    // 某些子菜单行（如 hint）不可聚焦，向下找第一个可聚焦项
-                    for (int i = 1; i < submenuRecycler.getChildCount(); i++) {
-                        View child = submenuRecycler.getChildAt(i);
-                        if (child.isFocusable()) {
-                            child.requestFocus();
-                            return;
-                        }
-                    }
-                }
+            if (!requestFirstFocusableChild(submenuRecycler)) {
+                submenuRecycler.requestFocus();
             }
         });
+    }
+
+    private static boolean requestFirstFocusableChild(ViewGroup parent) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View focusable = findFirstFocusable(parent.getChildAt(i));
+            if (focusable != null) {
+                focusable.requestFocus();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Nullable
+    private static View findFirstFocusable(View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE || !view.isEnabled()) {
+            return null;
+        }
+        if (view.isFocusable()) {
+            return view;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View focusable = findFirstFocusable(group.getChildAt(i));
+                if (focusable != null) {
+                    return focusable;
+                }
+            }
+        }
+        return null;
     }
 
     private static int keyCodeToFocusDirection(int keyCode) {
@@ -285,6 +309,34 @@ public class SettingsCollapsibleFragment extends Fragment
         return false;
     }
 
+    @Nullable
+    private static View findDirectChildOf(ViewGroup ancestor, View descendant) {
+        if (ancestor == null || descendant == null) {
+            return null;
+        }
+        View current = descendant;
+        while (current != null) {
+            Object parent = current.getParent();
+            if (parent == ancestor) {
+                return current;
+            }
+            if (!(parent instanceof View)) {
+                return null;
+            }
+            current = (View) parent;
+        }
+        return null;
+    }
+
+    private void runOnUiThreadIfAdded(Runnable action) {
+        focusHandler.post(() -> {
+            if (!isAdded()) {
+                return;
+            }
+            action.run();
+        });
+    }
+
     /** 关闭整条设置抽屉时收起左侧子菜单，避免下次打开仍停在子层 */
     public void onSettingsDrawerDismiss() {
         cancelPendingSubmenuOpen();
@@ -300,13 +352,7 @@ public class SettingsCollapsibleFragment extends Fragment
         mainMenuRecycler.post(() -> {
             if (openCategory != 0 && submenuContainer.getVisibility() == View.VISIBLE) {
                 submenuRecycler.scrollToPosition(0);
-                submenuRecycler.post(() -> {
-                    if (submenuRecycler.getChildCount() > 0) {
-                        submenuRecycler.getChildAt(0).requestFocus();
-                    } else {
-                        submenuRecycler.requestFocus();
-                    }
-                });
+                focusSubmenuFirstItem();
             } else {
                 int pos = mainMenuAdapter.positionOfCategory(lastOpenedCategory);
                 mainMenuRecycler.scrollToPosition(pos);
@@ -332,8 +378,9 @@ public class SettingsCollapsibleFragment extends Fragment
             }
 
             List<ChannelSource> streams = new ArrayList<>();
-            if (host.shouldShowStreamSwitchGroup() && requireActivity() instanceof PlayerActivity) {
-                long cid = ((PlayerActivity) requireActivity()).getCurrentChannelIdForPanel();
+            Activity activity = getActivity();
+            if (host.shouldShowStreamSwitchGroup() && activity instanceof PlayerActivity) {
+                long cid = ((PlayerActivity) activity).getCurrentChannelIdForPanel();
                 if (cid > 0) {
                     streams = channelRepository.getChannelSources(cid);
                 }
@@ -342,13 +389,7 @@ public class SettingsCollapsibleFragment extends Fragment
             List<M3USource> sourcesCopy = new ArrayList<>(sources);
             List<ChannelSource> streamsCopy = new ArrayList<>(streams);
             String epgFinal = epg;
-            if (!isAdded() || getActivity() == null) {
-                return;
-            }
-            requireActivity().runOnUiThread(() -> {
-                if (!isAdded()) {
-                    return;
-                }
+            runOnUiThreadIfAdded(() -> {
                 m3uCache = sourcesCopy;
                 channelStreamCache = streamsCopy;
                 cachedEpgUrl = epgFinal;
@@ -401,13 +442,7 @@ public class SettingsCollapsibleFragment extends Fragment
         submenuRecycler.post(() -> {
             submenuRecycler.scrollToPosition(0);
             if (moveFocusToFirstSubItem) {
-                submenuRecycler.post(() -> {
-                    if (submenuRecycler.getChildCount() > 0) {
-                        submenuRecycler.getChildAt(0).requestFocus();
-                    } else {
-                        submenuRecycler.requestFocus();
-                    }
-                });
+                focusSubmenuFirstItem();
             }
         });
     }
@@ -583,19 +618,7 @@ public class SettingsCollapsibleFragment extends Fragment
 
     @Override
     public void onMainMenuItemFocused(int categoryId) {
-        if (openCategory == categoryId && submenuContainer.getVisibility() == View.VISIBLE) {
-            cancelPendingSubmenuOpen();
-            return;
-        }
-        // 防抖：快速切换焦点时不立即重建子菜单，只在焦点稳定后展开
         cancelPendingSubmenuOpen();
-        pendingSubmenuOpen = () -> {
-            if (!isAdded()) {
-                return;
-            }
-            openSubmenu(categoryId, false);
-        };
-        focusHandler.postDelayed(pendingSubmenuOpen, SUBMENU_OPEN_DEBOUNCE_MS);
     }
 
     private void cancelPendingSubmenuOpen() {
@@ -660,13 +683,7 @@ public class SettingsCollapsibleFragment extends Fragment
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            if (!isAdded() || getActivity() == null) {
-                return;
-            }
-            requireActivity().runOnUiThread(() -> {
-                if (!isAdded()) {
-                    return;
-                }
+            runOnUiThreadIfAdded(() -> {
                 Toast.makeText(requireContext(), "已切换到: " + source.name, Toast.LENGTH_SHORT).show();
                 host.onActiveM3USourceChanged(source.id);
                 refreshDataFromDb();
@@ -681,10 +698,7 @@ public class SettingsCollapsibleFragment extends Fragment
             if (active != null) {
                 active.epgUrl = url;
                 db.m3uSourceDao().update(active);
-                requireActivity().runOnUiThread(() -> {
-                    if (!isAdded()) {
-                        return;
-                    }
+                runOnUiThreadIfAdded(() -> {
                     cachedEpgUrl = url;
                     Toast.makeText(requireContext(), "EPG 设置已保存", Toast.LENGTH_SHORT).show();
                 });
@@ -697,20 +711,20 @@ public class SettingsCollapsibleFragment extends Fragment
         executor.execute(() -> {
             M3USource active = db.m3uSourceDao().getActive();
             if (active != null && active.epgUrl != null && !active.epgUrl.isEmpty()) {
-                requireActivity().runOnUiThread(() ->
+                runOnUiThreadIfAdded(() ->
                         Toast.makeText(requireContext(), "正在刷新 EPG…", Toast.LENGTH_SHORT).show());
                 try {
                     epgRepository.loadEpg(active.epgUrl);
                     preferenceManager.markEpgAutoRefreshSuccess(active.epgUrl);
-                    requireActivity().runOnUiThread(() ->
+                    runOnUiThreadIfAdded(() ->
                             Toast.makeText(requireContext(), "EPG 刷新完成", Toast.LENGTH_SHORT).show());
                 } catch (Exception e) {
-                    requireActivity().runOnUiThread(() ->
+                    runOnUiThreadIfAdded(() ->
                             Toast.makeText(requireContext(), "EPG 刷新失败: " + e.getMessage(),
                                     Toast.LENGTH_LONG).show());
                 }
             } else {
-                requireActivity().runOnUiThread(() ->
+                runOnUiThreadIfAdded(() ->
                         Toast.makeText(requireContext(), "请先设置 EPG 地址", Toast.LENGTH_SHORT).show());
             }
         });

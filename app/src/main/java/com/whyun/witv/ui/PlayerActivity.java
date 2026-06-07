@@ -115,6 +115,9 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private static final long CHANNEL_LIST_HIDE_IDLE_MS = 10_000L;
     private final Runnable hideChannelListIdleRunnable = () -> {
+        if (isFocusInsideChannelListPanel()) {
+            return;
+        }
         if (channelListPanel != null) {
             channelListPanel.setVisibility(View.GONE);
         }
@@ -632,15 +635,25 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                     isFavorite = nowFav;
                     updateFavoriteIcon();
                 }
-                RecyclerView.Adapter<?> ad = channelListOverlay.getAdapter();
-                if (ad instanceof ChannelListAdapter) {
-                    ((ChannelListAdapter) ad).setFavoriteIds(favIds);
-                }
                 currentFavoriteIds = favIds;
-                if (!visibleChannelGroups.isEmpty() && selectedChannelGroupIndex >= 0
-                        && selectedChannelGroupIndex < visibleChannelGroups.size()) {
+                String selectedGroup = selectedChannelGroupIndex >= 0
+                        && selectedChannelGroupIndex < visibleChannelGroups.size()
+                        ? visibleChannelGroups.get(selectedChannelGroupIndex)
+                        : null;
+                visibleChannelGroups = buildVisibleChannelGroups(allChannels);
+                if (visibleChannelGroups.isEmpty()) {
+                    visibleChannels = new ArrayList<>();
+                } else {
+                    selectedChannelGroupIndex = selectedGroup != null
+                            ? visibleChannelGroups.indexOf(selectedGroup)
+                            : -1;
+                    if (selectedChannelGroupIndex < 0) {
+                        selectedChannelGroupIndex = findCurrentChannelGroupIndex();
+                    }
                     visibleChannels = getChannelsForGroup(visibleChannelGroups.get(selectedChannelGroupIndex));
+                    bindChannelGroupList();
                     bindChannelListForSelectedGroup(false);
+                    channelGroupListOverlay.scrollToPosition(selectedChannelGroupIndex);
                 }
                 switchingToast.setText(nowFav
                         ? getString(R.string.added_to_favorites)
@@ -711,7 +724,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             channelListPanel.setVisibility(View.GONE);
         }
         overlayVisible = false;
-        if (playerView != null) {
+        if (!isSettingsPanelVisible() && playerView != null) {
             playerView.requestFocus();
         }
     }
@@ -784,6 +797,14 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         handler.removeCallbacks(hideChannelListIdleRunnable);
     }
 
+    private boolean isFocusInsideChannelListPanel() {
+        if (channelListPanel == null || channelListPanel.getVisibility() != View.VISIBLE) {
+            return false;
+        }
+        View focused = getCurrentFocus();
+        return focused != null && isDescendantOf(focused, channelListPanel);
+    }
+
     private int channelStepForUpDown(int baseStep) {
         if (preferenceManager != null && preferenceManager.isReverseChannelKeysEnabled()) {
             return -baseStep;
@@ -809,6 +830,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (settingsPanelOverlay == null) {
             return;
         }
+        handler.removeCallbacks(hideOverlayRunnable);
         settingsPanelOverlay.setVisibility(View.VISIBLE);
         SettingsCollapsibleFragment f = (SettingsCollapsibleFragment) getSupportFragmentManager()
                 .findFragmentByTag("settings_drawer");
@@ -1078,7 +1100,9 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private List<String> buildVisibleChannelGroups(List<Channel> channels) {
         LinkedHashSet<String> groups = new LinkedHashSet<>();
-        groups.add(CHANNEL_GROUP_FAVORITES);
+        if (!currentFavoriteIds.isEmpty()) {
+            groups.add(CHANNEL_GROUP_FAVORITES);
+        }
         groups.add(CHANNEL_GROUP_ALL);
         for (Channel channel : channels) {
             String groupName = normalizeChannelGroup(channel);

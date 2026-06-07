@@ -95,6 +95,14 @@ public class SettingsMainMenuAdapter extends RecyclerView.Adapter<SettingsMainMe
         return 0;
     }
 
+    /** @return category id for adapter position, or 0 when invalid */
+    public int categoryIdAtPosition(int position) {
+        if (position < 0 || position >= items.size()) {
+            return 0;
+        }
+        return items.get(position).categoryId;
+    }
+
     static final class VH extends RecyclerView.ViewHolder {
         final TextView title;
 
