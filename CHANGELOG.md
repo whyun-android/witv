@@ -4,104 +4,107 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [1.3.0] - 2026-10-03
+
+本版主题是 **UDP / RTP 组播直播**，并引入 FFmpeg 软解补齐电视盒子硬解常缺的编码。
+期间实测暴露并修复了多个既有缺陷。新增 10 个测试类，单元测试总数增至 206 个。
 
 ### Added
 
-- **UDP / RTP 组播播放**：新增 `udp://` 与 `rtp://` 频道支持（`MulticastDataSource`），
-  自建数据源可配置 `SO_RCVBUF`（默认 4MB，避免高码率组播丢包花屏）、按 `ConnectivityManager`
-  的活动网络选择网卡 join（多网卡盒子 join 错网卡会收不到流）、自动申请 `MulticastLock`
-  （新增 `CHANGE_WIFI_MULTICAST_STATE` 权限）
+- **UDP / RTP 组播播放**：新增 `udp://` 与 `rtp://` 频道支持（`MulticastDataSource`）。
+  Media3 自带的 `UdpDataSource` 是 `final` 且缺三样直播必需能力：可配 `SO_RCVBUF`、
+  按网卡 `joinGroup`、以及 `rtp://` 支持（Media3 的 RTP 耦合在 RTSP 会话里）。
+  收包在独立线程完成并经环形缓冲（`PacketRingBuffer`）交给播放器，详见 Fixed 一节。
+  新增 `CHANGE_WIFI_MULTICAST_STATE` 权限，播放组播时自动持有 `MulticastLock`
 - **RTP 剥头与乱序重排**：`RtpPacketUtil` 解析 RTP 固定头（CSRC / 扩展头 / 尾部 padding），
-  `RtpReorderBuffer` 提供 32 包重排窗口且收包路径零分配；源标注 `rtp://` 但实际推裸 TS 时自动回退透传
+  `RtpReorderBuffer` 提供 32 包重排窗口，收包路径零内存分配；
+  源标注 `rtp://` 但实际推裸 TS 时自动回退为透传
 - **组播转单播代理（udpxy）**：设置「组播 / UDP」分类与 Web 管理页均可配置代理前缀，
-  配置后 `rtp://239.1.1.1:1234` 自动改写为 `http://<proxy>/rtp/239.1.1.1:1234`；
-  这是绝大多数家宽环境下唯一可行的组播方案
-- **组播地址规范化**：`MulticastUrlUtil` 统一处理 VLC 风格 `udp://@`、`udp://@@` 与
-  SSM 源地址段 `rtp://@src@group:port` 等写法
-- 新增单元测试 `MulticastUrlUtilTest`、`RtpPacketUtilTest`、`RtpReorderBufferTest`、
-  `SwitchableLoadControlTest`
-- 新增文档 `docs/multicast-udp-rtp.md`（配置方式、地址写法、实现要点与排查手册）
+  配置后 `rtp://239.1.1.1:1234` 自动改写为 `http://<proxy>/rtp/239.1.1.1:1234`。
+  绝大多数家宽环境收不到运营商组播（IPTV 走独立 VLAN、WiFi 下组播丢包严重），
+  代理是唯一可行的方案
+- **组播地址规范化**（`MulticastUrlUtil`）：统一 VLC 风格 `udp://@`、`udp://@@`
+  与 SSM 源地址段 `rtp://@src@group:port` 等写法
 - **FFmpeg 软解**：引入 `io.github.anilbeesetti:nextlib-media3ext:1.10.0-0.12.1`，
-  补上电视盒子硬解常缺的编码——组播 TS 高频的 MPEG-2 视频与 MP2/AC3/DTS 音频。
-  版本号中的 `1.10.0` 必须与 `media3_version` 一致，升级 Media3 时需同步
+  补上组播 TS 高频的 MPEG-2 视频与 MP2/AC3/DTS 音频。
+  ⚠️ 其版本号格式为 `<media3 版本>-<nextlib 版本>`，**升级 Media3 时必须同步升级**，
+  否则运行时抛 `NoSuchMethodError`
 - **解码方式设置**（`PlaybackDecoderMode`）：硬解优先（默认）/ 软解优先 / 仅硬解。
-  切换后立即重建播放器并续播当前频道（`RenderersFactory` 只能在 ExoPlayer 构建时指定）；
-  原生库不可用时设置页会给出提示
-- 全局开启 `setEnableDecoderFallback(true)`：某个 MediaCodec 解码器 configure 失败时
-  依次尝试同一渲染器里的其它 MediaCodec 解码器。注意它不会退到 FFmpeg 渲染器
-  （渲染器在 supportsFormat 阶段即已选定），硬解整体不可用时需切到「软解优先」档
-- 新增单元测试 `PlaybackDecoderModeTest`
+  切换后立即重建播放器并续播当前频道（`RenderersFactory` 只能在构建 ExoPlayer 时指定）；
+  原生库不可用时设置页会给出提示。
+  同时开启 `setEnableDecoderFallback(true)`——注意它只在同一渲染器的多个 MediaCodec
+  解码器之间回退，**不会**退到 FFmpeg 渲染器，硬解整体不可用时需手动切到「软解优先」
+- **组播收流诊断日志**：每 10 秒一条吞吐心跳（包速率 / 码率 / 累计丢包 / 环形缓冲占用）、
+  收包超时时打印距上一个包的时长与会话累计量、`SO_RCVBUF` 被内核压缩时告警、
+  关流时输出会话总结。用于区分「收流有问题」与「解码跟不上」这两类方向相反的故障
+- **debug 构建挂载 ExoPlayer 官方 `EventLogger`**（tag `PlayerManager-ev`），
+  可看到掉帧数、渲染器就绪状态、解码器初始化与状态变化原因；
+  并新增重缓冲计数日志（`Rebuffer #N ... after only Xms of playback`），
+  用于区分「缓冲慢慢耗干」与「起播后几十毫秒就又卡」
+- 新增文档 [`docs/multicast-udp-rtp.md`](docs/multicast-udp-rtp.md)：
+  配置方式、地址写法、实现要点与完整排查手册
+- `PlayerManager.getCurrentResolvedPlaybackUrl()`，与信号源中配置的原始地址区分，
+  便于排查组播改写
 
 ### Changed
 
-- 缓冲策略按流类型分档（`SwitchableLoadControl`）：HTTP/HLS 维持原有 35s/90s/6s/15s；
-  UDP/RTP（含经 udpxy 代理的）改为 8s/30s/1.5s/3s。组播是实时推流，服务端没有可回拉的缓冲，
-  厚缓冲只会单纯增加开播等待。两档共用同一内存池，换台时只切阈值、不重建 ExoPlayer
-- 直播 TS 解复用调参（`TsExtractor.MODE_SINGLE_PMT` + `FLAG_ALLOW_NON_IDR_KEYFRAMES`）
-  经 `MulticastAwareExtractorsFactory` **只作用于 `udp://` / `rtp://`**，起播更快；
-  HTTP 直连 `.ts` 等保持 Media3 默认——`MODE_SINGLE_PMT` 的「只有一个 PMT」假定
-  对来源不明的 TS（多节目 MPTS、中途重发 PMT）不成立，会导致 PID 映射走样
-  （症状为 `PesReader: Unexpected start code prefix`）。HLS 走
-  `DefaultHlsExtractorFactory`，两档都不影响它
-- 新增单元测试 `MulticastAwareExtractorsFactoryTest`
-- debug 构建挂载 ExoPlayer 官方 `EventLogger`（tag `PlayerManager-ev`），
-  可看到掉帧数、渲染器就绪状态、解码器初始化与状态变化原因；
-  并新增重缓冲计数日志（`Rebuffer #N ... after only Xms of playback`），
-  用于区分「缓冲慢慢耗干」与「起播后几十毫秒就又卡」这两种完全不同的故障
-- 组播收流新增诊断日志，用于区分「断流」与「播放器卡住」：每 10 秒一条吞吐心跳
-  （包速率/码率/累计丢包）、收包超时时打印距上一个包的时长与会话累计量、
-  `SO_RCVBUF` 被内核压缩时显式告警、关流时输出会话总结
-- **组播断流自动重新入组**（`MulticastStallPolicy`）：修复「组播播放数分钟后卡住、
-  退出频道重进才恢复」。成因是 IGMP 成员关系被上游交换机剪掉，重进之所以有效是因为
-  它重新 `joinGroup` 补发了 Membership Report。现在收包超时会原地离组再入组
-  （socket 与端口不变），健康的流永不触发，默认最多 2 次、约 9 秒后仍无数据才报错换源。
-  新增单元测试 `MulticastStallPolicyTest`
-- `PlayerManager` 新增 `getCurrentResolvedPlaybackUrl()`，与原始配置地址区分，便于排查组播改写
-- release 包限定 ABI 为 `armeabi-v7a` + `arm64-v8a`（Android TV 盒子全是 ARM），
+- **缓冲策略按流类型分档**（`SwitchableLoadControl`）：HTTP/HLS 维持原有 35s/90s/6s/15s；
+  UDP/RTP（含经 udpxy 代理的）改为 8s/30s/1.5s/3s。组播是实时推流，
+  服务端没有可回拉的缓冲，厚缓冲只会单纯增加开播等待。
+  两档共用同一内存池，换台时只切阈值、不重建 ExoPlayer
+- **直播 TS 解复用调参只作用于组播**（`MulticastAwareExtractorsFactory`）：
+  `TsExtractor.MODE_SINGLE_PMT` + `FLAG_ALLOW_NON_IDR_KEYFRAMES` 让组播起播更快，
+  但「只有一个 PMT」的假定对来源不明的 HTTP TS（多节目 MPTS、中途重发 PMT）不成立，
+  会导致 PID 映射走样（症状为 `PesReader: Unexpected start code prefix`）。
+  HTTP 直连 `.ts` 等保持 Media3 默认；HLS 走 `DefaultHlsExtractorFactory`，两档都不影响它
+- **release 包限定 ABI 为 `armeabi-v7a` + `arm64-v8a`**（Android TV 盒子全是 ARM），
   避免 FFmpeg 原生库把 x86/x86_64 一起带上；debug 包保留全部 ABI 以便模拟器调试。
   release APK 由约 7.7MB 增至约 18.9MB，其中原生库约 10.3MB
 
 ### Fixed
 
-- **修复「起播成功后卡在缓冲再也不恢复」**：起播超时在 `STATE_READY` 时被取消后从未重新武装，
-  之后再进入 `STATE_BUFFERING` 就完全没有定时器看管。实测遇到过组播数据以满码率持续进来
-  （8Mbps、`rtpLost` 不再增长）、播放器却永远停在 BUFFERING 的情况。
-  新增重缓冲看门狗：超时后先原地重开当前线路（新解复用器、新采样队列、时间戳重新对齐），
-  连续 `MAX_STALL_RECOVERIES`（2）次无效才换源——单线路频道换源等于放弃，应优先原地恢复。
-  看门狗只在成功起播过之后才武装，与起播超时互斥，避免同一时刻两个定时器各做一次动作
-- **组播收包改为独立线程 + 环形缓冲**（`PacketRingBuffer`）：原先由 ExoPlayer 的 Loader 线程
-  直接 `receive()`，而那条线程还要做 TS 解复用、写采样队列、分配内存。UDP 是推模式，
-  内核缓冲（实测被夹到 512KB，8Mbps 下仅约 0.5 秒）一满就永久丢包，于是解码器一挣扎或 GC
-  一停顿就出现突发丢包（实测一次卡顿期间 `rtpLost` 由 0 涨到 71、`disc=11`），
-  坏数据又让解码更糟，形成恶性循环。现在收包线程只负责把 socket 抽干，
-  默认 2048 个数据报（约 4MB / 8Mbps 下 2.7 秒）的缓冲吸收消费侧抖动；
-  缓冲写满时丢最旧的并计入 `ringOverflow` 统计。新增单元测试 `PacketRingBufferTest`
-- **修复坏线路无限重开不换源**：恢复预算原先在每次进入 `STATE_READY` 时无条件重置，
-  而坏源的典型形态正是「重开 → READY 几十毫秒 → 又卡」，于是每次看门狗都被当作第一次尝试，
-  `MAX_STALL_RECOVERIES` 永远到不了。改为只有持续播放超过 30 秒才算真正恢复
-- **修复暂停后看门狗把播放重新拉起**：退到后台时 `playWhenReady` 已被置假，
-  但已武装的看门狗仍会调用 `playCurrentSource()` 将其重置为真，造成后台偷偷续播。
-  现在 `pause()` 取消看门狗、`resume()` 在仍卡顿时重新武装，看门狗自身也校验 `playWhenReady`
-- **修复多网卡设备 join 错网卡收不到流**：原先只认 `getActiveNetwork()`，
+- **组播收包丢包**：原先由 ExoPlayer 的 Loader 线程直接 `receive()`，
+  而那条线程还要做 TS 解复用、写采样队列、分配内存。UDP 是推模式，
+  内核缓冲（实测被夹到 512KB，8Mbps 下仅约 0.5 秒）一满就永久丢包，
+  于是解码器一挣扎或 GC 一停顿就出现突发丢包，坏数据又让解码更糟，形成恶性循环。
+  改为独立收包线程 + 2048 个数据报的环形缓冲（约 4MB，8Mbps 下 2.7 秒），
+  缓冲写满才丢最旧的并计入 `ringOverflow`。
+  **实测同一条源 `rtpLost` 由 71 降至 0，重缓冲振荡消失**
+- **组播播放数分钟后卡住、退出频道重进才恢复**：成因是 IGMP 成员关系被上游交换机剪掉，
+  重进之所以有效是因为它重新 `joinGroup` 补发了 Membership Report。
+  现在收包超时会原地离组再入组（socket 与端口不变），健康的流永不触发，
+  默认最多 2 次、约 9 秒后仍无数据才报错换源（`MulticastStallPolicy`）
+- **多网卡设备 join 错网卡收不到流**：原先只认 `getActiveNetwork()`，
   而 IPTV 常接在没有公网的以太网口上，Android 不会把它当作活动网络；
   此时在 WiFi 上 `joinGroup` 会「成功」但一个包都收不到，基于异常的回退永不触发。
   改为在所有可用组播网卡上一并 join
-- **修复 RTP 发送端重启后长时间黑屏**：发送端重启会把序号重置到更小的值，
-  落在当前期望值之前的半个序号空间时每个包都被判为迟到，最坏要丢 32767 个包
-  （约 43 秒）才会自然追上。现在连续迟到 64 个即按新起点重新同步
-- **修复消费侧提前放弃重入组**：消费侧原先只等 `socketTimeoutMs * 2`（6 秒），
+- **起播成功后卡在缓冲再也不恢复**：起播超时在 `STATE_READY` 时被取消后从未重新武装，
+  之后再进入 `STATE_BUFFERING` 就完全没有定时器看管。
+  新增重缓冲看门狗：超时后先原地重开当前线路（新解复用器、新采样队列、时间戳重新对齐），
+  连续 2 次无效才换源——单线路频道换源等于放弃播放，应优先原地恢复
+- **坏线路被无限重开而不换源**：恢复预算原先在每次进入 `STATE_READY` 时无条件重置，
+  而坏源的典型形态正是「重开 → READY 几十毫秒 → 又卡」，于是每次看门狗都被当作第一次尝试，
+  上限永远到不了。改为只有持续播放超过 30 秒才算真正恢复
+- **暂停后看门狗把播放重新拉起**：退到后台时 `playWhenReady` 已被置假，
+  但已武装的看门狗仍会调用 `playCurrentSource()` 将其重置为真，造成后台偷偷续播。
+  现在 `pause()` 取消看门狗、`resume()` 在仍卡顿时重新武装，看门狗自身也校验 `playWhenReady`
+- **RTP 发送端重启后长时间黑屏**：发送端重启会把序号重置到更小的值，
+  落在当前期望值之前的半个序号空间时每个包都被判为迟到，
+  最坏要丢 32767 个包（约 43 秒）才会自然追上。现在连续迟到 64 个即按新起点重新同步
+- **组播断流时消费侧提前放弃**：消费侧原先只等 `socketTimeoutMs * 2`（6 秒），
   而收包线程要到约 9 秒才用完重入组预算，最后一次尝试还没来得及收包就被放弃
-- **修复 udpxy 流被写入磁盘缓存**：`LoggingPlaybackDataSource` 对非 `.ts` 请求同样走缓存委托，
-  经 udpxy 代理的无界组播流会被持续写入 96MB 缓存并持续淘汰，造成盒子闪存的无谓损耗
-- 修复频道列表惯性滚动时按分组切换导致的崩溃
-  （`IllegalStateException: Cannot call removeView(At) within removeView(At)`）。
-  频道列表回收掉带焦点的行时，`ViewGroup.removeViewInternal` 会触发 `rootViewRequestFocus()`，
-  焦点从根节点重新分发并落到分组列表项上，同步回调 `onGroupFocused` →
-  `setAdapter()`，对正在回收中的同一个 RecyclerView 造成重入。
-  新增 `RecyclerViewUpdateGate`，在任一列表处于布局/滚动计算中时把更新推迟到下一帧；
-  `updateSelectedGroup` 里的 `notifyDataSetChanged` 也受同一道闸门保护
-- 新增单元测试 `RecyclerViewUpdateGateTest`
+- **udpxy 流被写入磁盘缓存**：`LoggingPlaybackDataSource` 对非 `.ts` 请求同样走缓存委托，
+  经 udpxy 代理的无界组播流会被持续写入 96MB 缓存并持续淘汰，造成盒子闪存的无谓损耗。
+  非 `.ts` 请求现在一律绕过缓存（副作用：fMP4 封装的 HLS 分片也不再缓存，
+  与该设置「使用硬盘缓存预取直播分片」的定位一致）
+- **频道列表惯性滚动时切换分组导致崩溃**
+  （`IllegalStateException: Cannot call removeView(At) within removeView(At)`）：
+  回收带焦点的行会触发 `rootViewRequestFocus()`，焦点落到分组列表项上并同步回调
+  `onGroupFocused` → `setAdapter()`，而该列表仍在回收中。
+  新增 `RecyclerViewUpdateGate`，在任一列表处于布局/滚动计算中时把更新推迟到下一帧
+- **CI 构建失败**：`android-actions/setup-android` 的 `packages` 默认值含已被 Google
+  从 SDK 仓库下架的废弃 `tools` 包，`Setup Android SDK` 步骤在任何代码被编译前即退出 1。
+  `build.yml` 与 `release.yml` 同步收窄为 `platform-tools`
 
 ## [1.2.1] - 2026-04-13
 
