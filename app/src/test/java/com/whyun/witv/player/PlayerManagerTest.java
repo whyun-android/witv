@@ -409,6 +409,234 @@ public class PlayerManagerTest {
     }
 
     // ============================================================
+    // Rebuffer stall watchdog
+    // ============================================================
+
+    private static Object getPrivateField(Object target, String name) throws Exception {
+        Field f = target.getClass().getDeclaredField(name);
+        f.setAccessible(true);
+        return f.get(target);
+    }
+
+    private static void setPrivateField(Object target, String name, Object value) throws Exception {
+        Field f = target.getClass().getDeclaredField(name);
+        f.setAccessible(true);
+        f.set(target, value);
+    }
+
+    /**
+     * 起播之前的缓冲归起播超时（startTimeout）管。两者都武装的话，同一时刻会各做一次动作，
+     * 换源逻辑就乱了。
+     */
+    @Test
+    public void bufferingBeforeFirstStartDoesNotArmWatchdog() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)));
+
+        assertEquals(Player.STATE_BUFFERING, playerManager.getPlayer().getPlaybackState());
+        getPlayerListener().onPlaybackStateChanged(Player.STATE_BUFFERING);
+
+        assertNull(getPrivateField(playerManager, "rebufferWatchdogRunnable"));
+    }
+
+    /**
+     * 起播成功后再卡住，过去完全没有定时器看管（起播超时在 READY 时已取消），
+     * 会无限停在 BUFFERING。这里确认此时缓冲会武装看门狗。
+     */
+    @Test
+    public void bufferingAfterFirstStartArmsWatchdog() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)));
+        // 等价于曾经收到过 STATE_READY
+        setPrivateField(playerManager, "hasStartedPlayback", true);
+
+        getPlayerListener().onPlaybackStateChanged(Player.STATE_BUFFERING);
+
+        assertNotNull(getPrivateField(playerManager, "rebufferWatchdogRunnable"));
+    }
+
+    /** 重开线路后应交回起播超时看管，不再由看门狗重复计时。 */
+    @Test
+    public void restartingSourceHandsControlBackToStartTimeout() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)));
+        setPrivateField(playerManager, "hasStartedPlayback", true);
+        getPlayerListener().onPlaybackStateChanged(Player.STATE_BUFFERING);
+        assertNotNull(getPrivateField(playerManager, "rebufferWatchdogRunnable"));
+
+        playerManager.onRebufferStall(15_000L);
+
+        assertEquals(false, getPrivateField(playerManager, "hasStartedPlayback"));
+        assertNull(getPrivateField(playerManager, "rebufferWatchdogRunnable"));
+    }
+
+    /**
+     * 卡住优先原地重开当前线路——单线路频道换源就等于放弃，
+     * 而实测「数据在进、播放器停在 BUFFERING」重新 prepare 即可恢复。
+     */
+    @Test
+    public void rebufferStallRestartsCurrentSourceBeforeSwitching() throws Exception {
+        initializePlayerViaReflection();
+        List<ChannelSource> sources = Arrays.asList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0),
+                new ChannelSource(1, "http://b.com/2.m3u8", 1));
+        playerManager.playChannel(sources);
+        callback.reset();
+
+        for (int i = 0; i < PlayerManager.MAX_STALL_RECOVERIES; i++) {
+            playerManager.onRebufferStall(15_000L);
+            assertEquals("第 " + (i + 1) + " 次应原地重开而不是换源",
+                    0, playerManager.getCurrentSourceIndex());
+        }
+        assertEquals(0, callback.sourceSwitchingCount);
+        assertFalse(callback.allSourcesFailed);
+    }
+
+    @Test
+    public void rebufferStallSwitchesSourceAfterRecoveriesExhausted() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Arrays.asList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0),
+                new ChannelSource(1, "http://b.com/2.m3u8", 1)));
+        callback.reset();
+
+        for (int i = 0; i < PlayerManager.MAX_STALL_RECOVERIES; i++) {
+            playerManager.onRebufferStall(15_000L);
+        }
+        playerManager.onRebufferStall(15_000L);
+
+        assertEquals(1, playerManager.getCurrentSourceIndex());
+        assertEquals(1, callback.sourceSwitchingCount);
+    }
+
+    /** 单线路频道用尽恢复次数后应当如实上报失败，而不是继续无限重开。 */
+    @Test
+    public void rebufferStallOnSingleSourceEventuallyFails() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)));
+        callback.reset();
+
+        for (int i = 0; i <= PlayerManager.MAX_STALL_RECOVERIES; i++) {
+            playerManager.onRebufferStall(15_000L);
+        }
+
+        assertTrue(callback.allSourcesFailed);
+    }
+
+    /** 换频道必须重置恢复预算，否则上一个频道的卡顿会连累下一个。 */
+    @Test
+    public void channelSwitchResetsStallRecoveryBudget() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)));
+        for (int i = 0; i <= PlayerManager.MAX_STALL_RECOVERIES; i++) {
+            playerManager.onRebufferStall(15_000L);
+        }
+        assertTrue(callback.allSourcesFailed);
+
+        playerManager.playChannel(Arrays.asList(
+                new ChannelSource(2, "http://c.com/1.m3u8", 0),
+                new ChannelSource(2, "http://c.com/2.m3u8", 1)));
+        callback.reset();
+
+        playerManager.onRebufferStall(15_000L);
+
+        assertEquals("新频道应重新获得完整恢复预算",
+                0, playerManager.getCurrentSourceIndex());
+        assertEquals(0, callback.sourceSwitchingCount);
+    }
+
+    /**
+     * 坏源的典型形态是「重开 → READY 几十毫秒 → 又卡」。如果 READY 无条件重置恢复预算，
+     * 每次看门狗都会被当成第一次尝试，上限永远到不了，播放器会无限重开同一条坏线路而不换源。
+     */
+    @Test
+    public void transientReadyDoesNotRefillStallRecoveryBudget() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Arrays.asList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0),
+                new ChannelSource(1, "http://b.com/2.m3u8", 1)));
+        callback.reset();
+
+        for (int i = 0; i < PlayerManager.MAX_STALL_RECOVERIES; i++) {
+            playerManager.onRebufferStall(15_000L);
+            // 重开后短暂起播又立刻卡住
+            playerManager.onPlaybackReady();
+            playerManager.onEnteredBuffering();
+            assertEquals(0, playerManager.getCurrentSourceIndex());
+        }
+
+        playerManager.onRebufferStall(15_000L);
+
+        assertEquals("预算耗尽后必须换源", 1, playerManager.getCurrentSourceIndex());
+        assertEquals(1, callback.sourceSwitchingCount);
+    }
+
+    /** 稳定播放足够久之后再卡顿，应当重新获得完整恢复预算。 */
+    @Test
+    public void sustainedPlaybackRefillsStallRecoveryBudget() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Arrays.asList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0),
+                new ChannelSource(1, "http://b.com/2.m3u8", 1)));
+        callback.reset();
+
+        for (int i = 0; i < PlayerManager.MAX_STALL_RECOVERIES; i++) {
+            playerManager.onRebufferStall(15_000L);
+        }
+
+        // 模拟这次播放稳定持续了远超阈值的时间
+        playerManager.onPlaybackReady();
+        setPrivateField(playerManager, "lastReadyAtMs",
+                android.os.SystemClock.elapsedRealtime()
+                        - PlayerManager.STALL_RECOVERY_RESET_AFTER_MS - 1_000L);
+        playerManager.onEnteredBuffering();
+
+        playerManager.onRebufferStall(15_000L);
+
+        assertEquals("稳定播放后应重新获得预算，不该立刻换源",
+                0, playerManager.getCurrentSourceIndex());
+        assertEquals(0, callback.sourceSwitchingCount);
+    }
+
+    /**
+     * 退到后台时看门狗若仍然动作，会把 playWhenReady 重新置真，等于在后台偷偷续播。
+     */
+    @Test
+    public void pauseCancelsRebufferWatchdog() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)));
+        setPrivateField(playerManager, "hasStartedPlayback", true);
+        getPlayerListener().onPlaybackStateChanged(Player.STATE_BUFFERING);
+        assertNotNull(getPrivateField(playerManager, "rebufferWatchdogRunnable"));
+
+        playerManager.pause();
+
+        assertNull(getPrivateField(playerManager, "rebufferWatchdogRunnable"));
+    }
+
+    @Test
+    public void resumeRearmsWatchdogWhenStillBuffering() throws Exception {
+        initializePlayerViaReflection();
+        playerManager.playChannel(Collections.singletonList(
+                new ChannelSource(1, "http://a.com/1.m3u8", 0)));
+        setPrivateField(playerManager, "hasStartedPlayback", true);
+        getPlayerListener().onPlaybackStateChanged(Player.STATE_BUFFERING);
+        playerManager.pause();
+        assertNull(getPrivateField(playerManager, "rebufferWatchdogRunnable"));
+
+        playerManager.resume();
+
+        assertEquals(Player.STATE_BUFFERING, playerManager.getPlayer().getPlaybackState());
+        assertNotNull(getPrivateField(playerManager, "rebufferWatchdogRunnable"));
+    }
+
+    // ============================================================
     // Behind live window (HLS): error classification
     // ============================================================
 

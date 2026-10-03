@@ -3,6 +3,9 @@ package com.whyun.witv.data;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.whyun.witv.player.MulticastUrlUtil;
+import com.whyun.witv.player.PlaybackDecoderMode;
+
 public class PreferenceManager {
 
     private static final String PREF_NAME = "witv_prefs";
@@ -16,6 +19,10 @@ public class PreferenceManager {
     private static final String KEY_SHOW_LOAD_SPEED_OVERLAY = "show_load_speed_overlay";
     private static final String KEY_REVERSE_CHANNEL_KEYS = "reverse_channel_keys";
     private static final String KEY_SOURCE_SWITCH_TIMEOUT_MS = "source_switch_timeout_ms";
+    /** 组播转单播代理（udpxy）前缀，空表示直接收组播 */
+    private static final String KEY_UDPXY_PROXY_BASE = "udpxy_proxy_base";
+    /** 解码方式：硬解与 FFmpeg 软解的优先级，取值见 {@link PlaybackDecoderMode#getId()} */
+    private static final String KEY_PLAYBACK_DECODER_MODE = "playback_decoder_mode";
 
     /** 单线路超时未起播则换源；可选值见 {@link #normalizeSourceSwitchTimeoutMs(long)} */
     public static final long DEFAULT_SOURCE_SWITCH_TIMEOUT_MS = 15_000L;
@@ -126,6 +133,38 @@ public class PreferenceManager {
             }
         }
         return DEFAULT_SOURCE_SWITCH_TIMEOUT_MS;
+    }
+
+    /**
+     * 组播转单播代理（udpxy）前缀，例如 {@code http://192.168.1.1:4022}。
+     *
+     * <p>绝大多数家宽环境拿不到运营商组播（IPTV 走独立 VLAN，WiFi 下组播丢包也严重），
+     * 配上路由器/软路由的 udpxy 后，{@code rtp://239.1.1.1:1234} 会被改写成
+     * {@code http://192.168.1.1:4022/rtp/239.1.1.1:1234} 走 HTTP 单播。
+     *
+     * @return 已规范化的前缀；未配置时为空串
+     */
+    public String getUdpxyProxyBase() {
+        return prefs.getString(KEY_UDPXY_PROXY_BASE, "");
+    }
+
+    /** 存入前统一规范化（补 scheme、去掉末尾 {@code /} 与 {@code /udp}、{@code /rtp}）。 */
+    public void setUdpxyProxyBase(String base) {
+        prefs.edit()
+                .putString(KEY_UDPXY_PROXY_BASE, MulticastUrlUtil.normalizeProxyBase(base))
+                .apply();
+    }
+
+    /**
+     * 解码方式。未设置时为 {@link PlaybackDecoderMode#DEFAULT}（硬解优先，软解补位）。
+     */
+    public PlaybackDecoderMode getPlaybackDecoderMode() {
+        return PlaybackDecoderMode.fromId(prefs.getString(KEY_PLAYBACK_DECODER_MODE, null));
+    }
+
+    public void setPlaybackDecoderMode(PlaybackDecoderMode mode) {
+        PlaybackDecoderMode effective = mode != null ? mode : PlaybackDecoderMode.DEFAULT;
+        prefs.edit().putString(KEY_PLAYBACK_DECODER_MODE, effective.getId()).apply();
     }
 
     public static int[] getAllowedSourceTimeoutSeconds() {

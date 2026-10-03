@@ -4,6 +4,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!--
+      udp:// / rtp:// 组播收流必需：WiFi 驱动默认在网卡层丢弃目的 MAC 非本机的组播帧，
+      不持有 MulticastLock 时一个包都收不到。见 MulticastLockHolder。
+    -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <uses-feature
         android:name="android.software.leanback"

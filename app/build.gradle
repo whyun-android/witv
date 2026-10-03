@@ -24,6 +24,12 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // NextLib 的 FFmpeg 软解带原生库，四个 ABI 全带会让 APK 多出一倍体积。
+            // 发布包只保留 ARM（Android TV 盒子全是 ARM）；debug 保留全部 ABI，
+            // 以便在 x86_64 模拟器上调试。
+            ndk {
+                abiFilters 'armeabi-v7a', 'arm64-v8a'
+            }
         }
     }
 
@@ -39,6 +45,11 @@ dependencies {
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.robolectric:robolectric:4.14.1"
     testImplementation "androidx.test:core:1.6.1"
+
+    // FFmpeg 软解扩展（MPEG-2 视频、MP2/AC3/DTS 音频等盒子硬解常缺的编码）。
+    // 版本号格式为 <media3 版本>-<nextlib 版本>，必须与下面的 media3_version 严格一致，
+    // 否则运行时会因 Media3 内部 API 变动抛 NoSuchMethodError。
+    implementation "io.github.anilbeesetti:nextlib-media3ext:1.10.0-0.12.1"
 
     // Media3 ExoPlayer（stable，升级后请在目标盒子上做播放回归）
     implementation "androidx.media3:media3-exoplayer:$media3_version"

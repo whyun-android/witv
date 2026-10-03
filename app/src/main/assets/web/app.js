@@ -215,19 +215,36 @@ async function loadSettings() {
         const res = await fetch(`${API}/api/settings`);
         const settings = await res.json();
         document.getElementById('epgUrl').value = settings.epgUrl || '';
+        document.getElementById('udpxyProxyBase').value = settings.udpxyProxyBase || '';
+        renderUdpxyPreview(settings.udpxyProxyBase || '');
     } catch (err) {
         console.error('Failed to load settings:', err);
     }
 }
 
+// 用一条示例频道展示改写效果，比单看前缀直观
+function renderUdpxyPreview(base) {
+    const el = document.getElementById('udpxyPreview');
+    if (!el) return;
+    el.textContent = base
+        ? `udp:// 和 rtp:// 频道将改走：rtp://239.1.1.1:1234 → ${base}/rtp/239.1.1.1:1234`
+        : '未配置，udp:// 和 rtp:// 频道直接收组播（需设备所在网络能收到运营商组播）';
+}
+
 async function saveSettings() {
     const epgUrl = document.getElementById('epgUrl').value.trim();
+    const udpxyProxyBase = document.getElementById('udpxyProxyBase').value.trim();
     try {
-        await fetch(`${API}/api/settings`, {
+        const res = await fetch(`${API}/api/settings`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ epgUrl })
+            body: JSON.stringify({ epgUrl, udpxyProxyBase })
         });
+        const data = await res.json();
+        // 后端会规范化（补 scheme、去掉末尾 / 和 /udp /rtp），回填实际生效的值
+        const normalized = data.udpxyProxyBase || '';
+        document.getElementById('udpxyProxyBase').value = normalized;
+        renderUdpxyPreview(normalized);
         showToast('设置已保存', 'success');
     } catch (err) {
         showToast('保存失败', 'error');

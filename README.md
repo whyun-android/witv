@@ -10,6 +10,8 @@ Android TV M3U 直播播放器，使用原生 ExoPlayer 播放，支持多源自
 - **多源自动切换** — 同一频道聚合多个播放地址，播放失败时自动尝试下一个源
 - **EPG 节目预告** — 自动读取 M3U 中的 `x-tvg-url` 属性，也支持手动配置 XMLTV 地址
 - **局域网 Web 管理** — 内置 HTTP 服务器（端口 9978），通过手机/电脑浏览器管理播放源和设置
+- **UDP / RTP 组播** — 支持 `udp://`、`rtp://` 组播频道（含 RTP 剥头与乱序重排）；也可配置 udpxy 代理把组播改写为 HTTP 单播，详见 [docs/multicast-udp-rtp.md](docs/multicast-udp-rtp.md)
+- **FFmpeg 软解兜底** — 内置 NextLib FFmpeg 解码器，补上盒子硬解常缺的 MPEG-2 视频与 MP2/AC3 音频；可在设置中切换硬解优先 / 软解优先 / 仅硬解
 - **遥控器适配** — 完整的 D-Pad 导航支持，数字键直接跳转频道
 
 ## 遥控器操作
@@ -27,7 +29,8 @@ Android TV M3U 直播播放器，使用原生 ExoPlayer 播放，支持多源自
 
 | 组件 | 技术 |
 |------|------|
-| 播放器 | Media3 ExoPlayer 1.10.0-rc01 |
+| 播放器 | Media3 ExoPlayer 1.10.0 |
+| 软件解码 | NextLib media3ext 1.10.0-0.12.1（FFmpeg） |
 | TV 界面 | Leanback 1.2.0 |
 | 数据库 | Room 2.6.1 |
 | HTTP 服务器 | NanoHTTPD 2.3.1 |

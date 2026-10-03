@@ -4,6 +4,7 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -18,16 +19,26 @@ import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
-import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.RenderersFactory;
 import androidx.media3.exoplayer.source.BehindLiveWindowException;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
+import androidx.media3.extractor.DefaultExtractorsFactory;
+import androidx.media3.extractor.ExtractorsFactory;
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory;
+import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.ui.PlayerView;
 
+import androidx.media3.exoplayer.util.EventLogger;
+
+import com.whyun.witv.BuildConfig;
 import com.whyun.witv.WiTVApp;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.entity.ChannelSource;
+
+import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary;
+import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -90,16 +101,55 @@ public class PlayerManager {
     private ExoPlayer player;
     @Nullable
     private HlsSegmentPrefetcher hlsSegmentPrefetcher;
+    @Nullable
+    private SwitchableLoadControl loadControl;
+    @Nullable
+    private MulticastLockHolder multicastLockHolder;
+    @Nullable
+    private PreferenceManager preferenceManager;
+    /** 当前 ExoPlayer 实例构建时采用的解码方式 */
+    @Nullable
+    private PlaybackDecoderMode activeDecoderMode;
     private PlayerView playerView;
     private Callback callback;
 
     private List<ChannelSource> currentSources = new ArrayList<>();
     private int currentSourceIndex = 0;
+    /** 当前线路经规范化/udpxy 改写后真正交给播放器的地址 */
+    @Nullable
+    private String currentResolvedUrl;
     private boolean isRetrying = false;
     private int playGeneration = 0;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable timeoutRunnable;
+    /** 起播成功后又卡在缓冲的看门狗（见 {@link #onRebufferStall}） */
+    private Runnable rebufferWatchdogRunnable;
+    /** 连续「卡住→原地重开」的次数，用尽后才换源 */
+    private int consecutiveStallRecoveries;
+    /**
+     * 当前线路是否已经成功起播过。没起播过的缓冲由起播超时（{@link #startTimeout}）看管，
+     * 两者不能同时武装，否则同一时刻会各做一次动作。
+     */
+    private boolean hasStartedPlayback;
+    /** 当前线路起播后又回到缓冲的次数 */
+    private int rebufferCount;
+    /** 最近一次进入 READY 的时刻，用于算「撑了多久就又卡了」 */
+    private long lastReadyAtMs;
+
+    /**
+     * 原地重开几次仍救不回来才换源。组播只有一条线路时换源等于放弃，所以优先原地恢复。
+     */
+    static final int MAX_STALL_RECOVERIES = 2;
+
+    /**
+     * 播放持续这么久才算「真正恢复」，恢复预算才会重置。
+     *
+     * <p>不能在收到 READY 时就无条件重置：坏源常见的形态正是「重开→READY 几十毫秒→又卡」，
+     * 那样每次看门狗都被当成第一次尝试，{@link #MAX_STALL_RECOVERIES} 永远到不了，
+     * 播放器会无限重开同一条坏线路而不换源。
+     */
+    static final long STALL_RECOVERY_RESET_AFTER_MS = 30_000L;
 
     private static String playbackStateName(int state) {
         switch (state) {
@@ -124,16 +174,12 @@ public class PlayerManager {
                 return;
             }
             if (playbackState == Player.STATE_READY) {
-                cancelTimeout();
-                isRetrying = false;
-                Log.i(TAG, "Playback started, source index: " + currentSourceIndex);
-                if (callback != null) {
-                    callback.onPlaybackStarted(currentSourceIndex, currentSources.size());
-                }
+                onPlaybackReady();
             } else if (playbackState == Player.STATE_ENDED) {
                 cancelTimeout();
+                cancelRebufferWatchdog();
             } else if (playbackState == Player.STATE_BUFFERING) {
-                Log.d(TAG, "Buffering...");
+                onEnteredBuffering();
             }
         }
 
@@ -144,6 +190,7 @@ public class PlayerManager {
                 return;
             }
             cancelTimeout();
+            cancelRebufferWatchdog();
 
             if (isBehindLiveWindowError(error)) {
                 String url = currentSourceIndex < currentSources.size()
@@ -176,23 +223,62 @@ public class PlayerManager {
         }
     };
 
+    /** 进入 {@code STATE_READY}。注意这里**不**重置恢复预算，见 {@link #STALL_RECOVERY_RESET_AFTER_MS}。 */
+    void onPlaybackReady() {
+        cancelTimeout();
+        cancelRebufferWatchdog();
+        hasStartedPlayback = true;
+        lastReadyAtMs = SystemClock.elapsedRealtime();
+        isRetrying = false;
+        Log.i(TAG, "Playback started, source index: " + currentSourceIndex);
+        if (callback != null) {
+            callback.onPlaybackStarted(currentSourceIndex, currentSources.size());
+        }
+    }
+
+    /** 进入 {@code STATE_BUFFERING}。 */
+    void onEnteredBuffering() {
+        if (hasStartedPlayback) {
+            long playedMs = SystemClock.elapsedRealtime() - lastReadyAtMs;
+            rebufferCount++;
+            if (playedMs >= STALL_RECOVERY_RESET_AFTER_MS) {
+                // 稳定播放了足够久，这次卡顿与之前的无关，重新给满恢复预算
+                consecutiveStallRecoveries = 0;
+            }
+            // 「起播后几十毫秒就又卡」说明不是数据不够，而是渲染器 ready 不了
+            // （解码跟不上实时等），和「缓冲慢慢耗干」是两种完全不同的故障。
+            Log.w(TAG, String.format(Locale.US,
+                    "Rebuffer #%d on source %d/%d after only %dms of playback",
+                    rebufferCount, currentSourceIndex + 1, currentSources.size(), playedMs));
+        } else {
+            Log.d(TAG, "Buffering...");
+        }
+        // 起播超时在 READY 时就被取消了，之后再卡住本来无人看管：
+        // 数据还在进但播放器消化不动（TS 时间戳错乱等）会无限停在这里。
+        startRebufferWatchdog();
+    }
+
     public PlayerManager(Context context) {
         this.context = context;
+    }
+
+    /** 懒初始化：测试会绕过 {@link #initialize} 直接注入播放器。 */
+    private PreferenceManager preferenceManager() {
+        if (preferenceManager == null) {
+            preferenceManager = new PreferenceManager(context);
+        }
+        return preferenceManager;
     }
 
     @OptIn(markerClass = UnstableApi.class)
     public void initialize(PlayerView playerView) {
         this.playerView = playerView;
-        PreferenceManager preferenceManager = new PreferenceManager(context);
+        PreferenceManager preferenceManager = preferenceManager();
 
-        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                        35_000,  // minBufferMs
-                        90_000,  // maxBufferMs
-                        6000,    // bufferForPlaybackMs
-                        15_000   // bufferForPlaybackAfterRebufferMs
-                )
-                .build();
+        // HLS 直播与 UDP/RTP 组播的缓冲取舍相反，用一个可切换的 LoadControl 承载两套参数，
+        // 换源时按地址切换，无需重建 ExoPlayer。
+        SwitchableLoadControl loadControl = new SwitchableLoadControl();
+        this.loadControl = loadControl;
 
         DefaultHttpDataSource.Factory httpDataSourceFactory = new DefaultHttpDataSource.Factory()
                 .setConnectTimeoutMs(HTTP_CONNECT_TIMEOUT_MS)
@@ -218,23 +304,129 @@ public class PlayerManager {
         DataSource.Factory mediaDataSourceFactory = hlsSegmentPrefetcher != null
                 ? hlsSegmentPrefetcher.getPlaybackDataSourceFactory()
                 : networkDataSourceFactory;
-        DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(context,
+        DefaultDataSource.Factory httpChainFactory = new DefaultDataSource.Factory(context,
                 new M3u8RewritingDataSource.Factory(
                         networkDataSourceFactory,
                         mediaDataSourceFactory,
                         hlsSegmentPrefetcher));
+
+        // udp:// / rtp:// 由自建组播数据源接管（可配 SO_RCVBUF、按活动网卡 join、RTP 剥头重排），
+        // 其余 scheme 仍走上面的 HTTP/HLS 链路。
+        multicastLockHolder = new MulticastLockHolder(context);
+        DataSource.Factory dataSourceFactory = new MulticastAwareDataSourceFactory(
+                httpChainFactory,
+                new MulticastDataSource.Factory(context, /* rtpMode= */ false, multicastLockHolder),
+                new MulticastDataSource.Factory(context, /* rtpMode= */ true, multicastLockHolder));
+
+        // 直播 TS 调参只给 udp:// / rtp:// 用：单节目模式起播更快、允许非 IDR 关键帧，
+        // 但 MODE_SINGLE_PMT 的「只有一个 PMT」假定对 HTTP 上来源不明的 TS 并不安全。
+        // HLS 走的是 DefaultHlsExtractorFactory，两档都不影响它。
+        ExtractorsFactory extractorsFactory = new MulticastAwareExtractorsFactory(
+                new DefaultExtractorsFactory()
+                        .setTsExtractorMode(TsExtractor.MODE_SINGLE_PMT)
+                        .setTsExtractorFlags(
+                                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES),
+                new DefaultExtractorsFactory());
+
         DefaultMediaSourceFactory mediaSourceFactory =
-                new DefaultMediaSourceFactory(dataSourceFactory);
+                new DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory);
 
         DefaultBandwidthMeter bandwidthMeter = WiTVApp.getInstance().getOrCreateBandwidthMeter();
         player = new ExoPlayer.Builder(context)
                 .setLoadControl(loadControl)
                 .setBandwidthMeter(bandwidthMeter)
                 .setMediaSourceFactory(mediaSourceFactory)
+                .setRenderersFactory(buildRenderersFactory(preferenceManager))
                 .build();
 
         playerView.setPlayer(player);
         player.addListener(playerListener);
+        if (BuildConfig.DEBUG) {
+            // 掉帧数、解码器初始化、状态变化原因、带宽——排查「解码跟不上实时」所需的信息
+            // 只有官方 EventLogger 有。日志很吵，所以只在 debug 构建挂。
+            player.addAnalyticsListener(new EventLogger(TAG + "-ev"));
+        }
+    }
+
+    /**
+     * 组装渲染器工厂：在平台 MediaCodec 之外挂上 NextLib 的 FFmpeg 软解。
+     *
+     * <p>组播 TS 常见的 MPEG-2 视频与 MP2/AC3 音频，不少电视盒子的硬解不支持或实现有问题，
+     * 没有软解兜底就是黑屏或无声。
+     */
+    @OptIn(markerClass = UnstableApi.class)
+    private RenderersFactory buildRenderersFactory(PreferenceManager preferenceManager) {
+        PlaybackDecoderMode mode = preferenceManager.getPlaybackDecoderMode();
+        activeDecoderMode = mode;
+        Log.i(TAG, String.format(Locale.US,
+                "Decoder mode: %s (extensionRendererMode=%d), ffmpeg=%s",
+                mode.getId(), mode.getExtensionRendererMode(), ffmpegLibrarySummary()));
+        return new NextRenderersFactory(context)
+                .setExtensionRendererMode(mode.getExtensionRendererMode())
+                // 某个 MediaCodec 解码器 configure 失败时，依次尝试同一渲染器里的其它
+                // MediaCodec 解码器（例如 c2.android.avc.decoder 失败后试 c2.qti.avc.decoder）。
+                // 注意它**不会**退到 FFmpeg 渲染器——渲染器早在 supportsFormat 阶段就选定了；
+                // 硬解整体不可用时请用「软解优先」档。
+                .setEnableDecoderFallback(true);
+    }
+
+    private static String ffmpegLibrarySummary() {
+        try {
+            if (!FfmpegLibrary.isAvailable()) {
+                return "unavailable";
+            }
+            String version = FfmpegLibrary.getVersion();
+            return version != null ? version : "available";
+        } catch (Throwable t) {
+            // 原生库缺失/ABI 不匹配时不应让播放器构建失败
+            return "load-failed: " + t.getClass().getSimpleName();
+        }
+    }
+
+    /** 构建播放器时生效的解码方式；未初始化时为 null。 */
+    @Nullable
+    public PlaybackDecoderMode getActiveDecoderMode() {
+        return activeDecoderMode;
+    }
+
+    /**
+     * 解码方式变更后重建播放器并续播当前频道。
+     *
+     * <p>{@code RenderersFactory} 只能在 {@code ExoPlayer} 构建时指定，之后改不了，所以必须重建。
+     * 调用方需要在前后重新挂载自己加在 {@code ExoPlayer} 上的监听器
+     * （见 {@code PlayerActivity.onPlaybackDecoderModeChanged}）。
+     *
+     * @return 是否真的重建了（未初始化过则返回 false）
+     */
+    public boolean reinitializeForDecoderModeChange() {
+        if (playerView == null) {
+            return false;
+        }
+        List<ChannelSource> sources = new ArrayList<>(currentSources);
+        int index = currentSourceIndex;
+
+        cancelTimeout();
+        // 让旧播放器的残留回调失效
+        playGeneration++;
+        if (hlsSegmentPrefetcher != null) {
+            hlsSegmentPrefetcher.release();
+            hlsSegmentPrefetcher = null;
+        }
+        if (player != null) {
+            player.removeListener(playerListener);
+            player.release();
+            player = null;
+        }
+
+        initialize(playerView);
+
+        if (!sources.isEmpty()) {
+            currentSources = sources;
+            currentSourceIndex = Math.max(0, Math.min(index, sources.size() - 1));
+            isRetrying = false;
+            playCurrentSource();
+        }
+        return true;
     }
 
     public void setCallback(Callback callback) {
@@ -244,6 +436,10 @@ public class PlayerManager {
     public void playChannel(List<ChannelSource> sources) {
         playGeneration++;
         cancelTimeout();
+        cancelRebufferWatchdog();
+        consecutiveStallRecoveries = 0;
+        hasStartedPlayback = false;
+        rebufferCount = 0;
         stopPlayer();
 
         if (sources == null || sources.isEmpty()) {
@@ -261,6 +457,7 @@ public class PlayerManager {
     private void playCurrentSource() {
         if (currentSourceIndex >= currentSources.size()) {
             isRetrying = false;
+            currentResolvedUrl = null;
             if (hlsSegmentPrefetcher != null) {
                 hlsSegmentPrefetcher.onPlaybackSourceChanged(Uri.EMPTY);
             }
@@ -274,25 +471,50 @@ public class PlayerManager {
             callback.onSourceSwitching(currentSourceIndex, currentSources.size());
         }
 
-        String url = currentSources.get(currentSourceIndex).url;
-        Log.i(TAG, String.format(Locale.US, "Trying source %d/%d: %s",
-                currentSourceIndex + 1, currentSources.size(), url));
+        String rawUrl = currentSources.get(currentSourceIndex).url;
+        // 组播地址先规范化（去掉 VLC 风格的 @ / SSM 源地址段），配了 udpxy 则改写成 HTTP 单播
+        boolean multicastOrigin = MulticastUrlUtil.isMulticastStreamUrl(rawUrl);
+        String url = MulticastUrlUtil.resolvePlaybackUrl(rawUrl, preferenceManager().getUdpxyProxyBase());
+        currentResolvedUrl = url;
+        if (multicastOrigin && !url.equals(rawUrl)) {
+            Log.i(TAG, String.format(Locale.US, "Trying source %d/%d: %s (via udpxy: %s)",
+                    currentSourceIndex + 1, currentSources.size(), rawUrl, url));
+        } else {
+            Log.i(TAG, String.format(Locale.US, "Trying source %d/%d: %s",
+                    currentSourceIndex + 1, currentSources.size(), url));
+        }
         Uri uri = Uri.parse(url);
         if (hlsSegmentPrefetcher != null) {
             hlsSegmentPrefetcher.onPlaybackSourceChanged(uri);
         }
 
+        hasStartedPlayback = false;
+        rebufferCount = 0;
+        cancelRebufferWatchdog();
         player.stop();
         player.clearMediaItems();
 
-        MediaItem mediaItem = buildMediaItem(url);
+        // 组播（含经 udpxy 代理的）是实时流，没有可回拉的服务端缓冲，必须用低延迟缓冲档；
+        // 必须在 prepare() 之前切换。
+        if (loadControl != null) {
+            loadControl.setProfile(multicastOrigin
+                    ? SwitchableLoadControl.Profile.MULTICAST
+                    : SwitchableLoadControl.Profile.STREAMING);
+        }
+
+        MediaItem mediaItem = buildMediaItem(url, multicastOrigin);
         player.setMediaItem(mediaItem);
         player.prepare();
         player.setPlayWhenReady(true);
         startTimeout();
     }
 
-    private MediaItem buildMediaItem(String url) {
+    /**
+     * @param url             已规范化（可能已改写为 udpxy 地址）的播放地址
+     * @param multicastOrigin 原始地址是否为 {@code udp://}/{@code rtp://}；经 udpxy 代理后 scheme
+     *                        变成 http 但载荷仍是裸 MPEG-TS，必须据此显式指定容器类型
+     */
+    private MediaItem buildMediaItem(String url, boolean multicastOrigin) {
         Uri uri = Uri.parse(url);
         String lowerUrl = url.toLowerCase(Locale.US);
         @Nullable String scheme = uri.getScheme();
@@ -306,6 +528,11 @@ public class PlayerManager {
         }
         // RTMP：RtmpDataSource（media3-datasource-rtmp）+ 渐进式容器（常见为 FLV）。
         if ("rtmp".equals(lowerScheme)) {
+            return builder.build();
+        }
+        // UDP/RTP 组播：地址没有扩展名，靠嗅探识别 TS 会拖慢起播，直接指定 MPEG-TS。
+        if (multicastOrigin) {
+            builder.setMimeType(MimeTypes.VIDEO_MP2T);
             return builder.build();
         }
 
@@ -364,6 +591,8 @@ public class PlayerManager {
                 "Switching source — reason: %s | failedSource: %d/%d | url: %s",
                 reason, failedIndex + 1, currentSources.size(), failedUrl));
         isRetrying = true;
+        // 换到另一条线路，恢复预算重新给满
+        consecutiveStallRecoveries = 0;
         currentSourceIndex++;
         playCurrentSource();
     }
@@ -377,6 +606,7 @@ public class PlayerManager {
 
     public void manualSwitchSource(int index) {
         if (index >= 0 && index < currentSources.size()) {
+            consecutiveStallRecoveries = 0;
             String url = currentSources.get(index).url;
             Log.i(TAG, String.format(Locale.US,
                     "Manual switch source — target: %d/%d | url: %s",
@@ -387,9 +617,67 @@ public class PlayerManager {
         }
     }
 
+    /**
+     * 起播成功后重新进入缓冲时武装看门狗。已武装则不重复计时，避免缓冲状态反复进出把计时无限推后。
+     */
+    private void startRebufferWatchdog() {
+        // 还没起播过：这段缓冲归起播超时管，不要重复武装
+        if (!hasStartedPlayback || rebufferWatchdogRunnable != null) {
+            return;
+        }
+        long timeoutMs = preferenceManager().getSourceSwitchTimeoutMs();
+        final int generation = playGeneration;
+        rebufferWatchdogRunnable = () -> {
+            rebufferWatchdogRunnable = null;
+            if (generation != playGeneration) {
+                return;
+            }
+            if (player == null || player.getPlaybackState() != Player.STATE_BUFFERING) {
+                return;
+            }
+            if (!player.getPlayWhenReady()) {
+                // 用户已暂停或退到后台：恢复动作会把 playWhenReady 重新置真，
+                // 等于在后台偷偷续播。此处只继续看管，不动作。
+                return;
+            }
+            onRebufferStall(timeoutMs);
+        };
+        handler.postDelayed(rebufferWatchdogRunnable, timeoutMs);
+    }
+
+    private void cancelRebufferWatchdog() {
+        if (rebufferWatchdogRunnable != null) {
+            handler.removeCallbacks(rebufferWatchdogRunnable);
+            rebufferWatchdogRunnable = null;
+        }
+    }
+
+    /**
+     * 卡在缓冲超时后的恢复：先原地重开当前线路，多次无效再换源。
+     *
+     * <p>这里刻意不直接换源。实测遇到过「组播数据以满码率持续进来、播放器却永远停在 BUFFERING」
+     * （TS 突发丢包导致时间戳不连续，缓冲时长算不出来），这种情况重新 prepare 一次即可恢复：
+     * 新的解复用器、新的采样队列、时间戳重新对齐。而且单线路频道换源就等于放弃播放。
+     * 真正死掉的流会在重开后被起播超时接住，照常换源。
+     */
+    void onRebufferStall(long timeoutMs) {
+        if (consecutiveStallRecoveries >= MAX_STALL_RECOVERIES) {
+            switchToNextSource(String.format(Locale.US,
+                    "rebuffer_stall: still buffering after %d recovery attempt(s)",
+                    consecutiveStallRecoveries));
+            return;
+        }
+        consecutiveStallRecoveries++;
+        Log.w(TAG, String.format(Locale.US,
+                "Stalled in BUFFERING for %dms with source %d/%d - restarting playback (%d/%d)",
+                timeoutMs, currentSourceIndex + 1, currentSources.size(),
+                consecutiveStallRecoveries, MAX_STALL_RECOVERIES));
+        playCurrentSource();
+    }
+
     private void startTimeout() {
         cancelTimeout();
-        long timeoutMs = new PreferenceManager(context).getSourceSwitchTimeoutMs();
+        long timeoutMs = preferenceManager().getSourceSwitchTimeoutMs();
         final int generation = playGeneration;
         timeoutRunnable = () -> {
             if (generation != playGeneration) {
@@ -432,7 +720,16 @@ public class PlayerManager {
         return currentSources.size();
     }
 
-    /** 当前正在尝试播放的线路地址；无有效线路时为 null。 */
+    /**
+     * 当前实际交给播放器的地址：组播已规范化，配了 udpxy 时为改写后的 HTTP 地址。
+     * 与 {@link #getCurrentPlaybackUrl()}（信号源里配置的原始地址）区分，便于排查组播问题。
+     */
+    @Nullable
+    public String getCurrentResolvedPlaybackUrl() {
+        return currentResolvedUrl;
+    }
+
+    /** 当前正在尝试播放的线路地址（信号源中配置的原始写法）；无有效线路时为 null。 */
     @Nullable
     public String getCurrentPlaybackUrl() {
         if (currentSources == null || currentSources.isEmpty()) {
@@ -447,17 +744,24 @@ public class PlayerManager {
     public void pause() {
         if (player != null) {
             player.setPlayWhenReady(false);
+            // 暂停期间不看管卡顿，避免看门狗把播放重新拉起来
+            cancelRebufferWatchdog();
         }
     }
 
     public void resume() {
         if (player != null) {
             player.setPlayWhenReady(true);
+            if (hasStartedPlayback && player.getPlaybackState() == Player.STATE_BUFFERING) {
+                // 暂停时取消过，恢复后若仍卡着就重新看管
+                startRebufferWatchdog();
+            }
         }
     }
 
     public void release() {
         cancelTimeout();
+        cancelRebufferWatchdog();
         if (hlsSegmentPrefetcher != null) {
             hlsSegmentPrefetcher.release();
             hlsSegmentPrefetcher = null;
