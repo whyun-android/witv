@@ -294,6 +294,7 @@ public class WebServer extends NanoHTTPD {
         M3USource active = db.m3uSourceDao().getActive();
         JsonObject settings = new JsonObject();
         settings.addProperty("epgUrl", active != null ? (active.epgUrl != null ? active.epgUrl : "") : "");
+        settings.addProperty("udpxyProxyBase", new PreferenceManager(context).getUdpxyProxyBase());
         return jsonOk(gson.toJson(settings));
     }
 
@@ -306,8 +307,16 @@ public class WebServer extends NanoHTTPD {
             active.epgUrl = json.get("epgUrl").getAsString();
             db.m3uSourceDao().update(active);
         }
+        // 组播转单播代理：遥控器输入 URL 很痛苦，Web 管理页是更合适的入口
+        if (json.has("udpxyProxyBase")) {
+            new PreferenceManager(context).setUdpxyProxyBase(
+                    json.get("udpxyProxyBase").getAsString());
+        }
 
-        return jsonOk("{\"success\":true}");
+        JsonObject result = new JsonObject();
+        result.addProperty("success", true);
+        result.addProperty("udpxyProxyBase", new PreferenceManager(context).getUdpxyProxyBase());
+        return jsonOk(gson.toJson(result));
     }
 
     // --- Favorite handlers ---

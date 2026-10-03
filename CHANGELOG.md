@@ -4,6 +4,88 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Added
+
+- **UDP / RTP 组播播放**：新增 `udp://` 与 `rtp://` 频道支持（`MulticastDataSource`），
+  自建数据源可配置 `SO_RCVBUF`（默认 4MB，避免高码率组播丢包花屏）、按 `ConnectivityManager`
+  的活动网络选择网卡 join（多网卡盒子 join 错网卡会收不到流）、自动申请 `MulticastLock`
+  （新增 `CHANGE_WIFI_MULTICAST_STATE` 权限）
+- **RTP 剥头与乱序重排**：`RtpPacketUtil` 解析 RTP 固定头（CSRC / 扩展头 / 尾部 padding），
+  `RtpReorderBuffer` 提供 32 包重排窗口且收包路径零分配；源标注 `rtp://` 但实际推裸 TS 时自动回退透传
+- **组播转单播代理（udpxy）**：设置「组播 / UDP」分类与 Web 管理页均可配置代理前缀，
+  配置后 `rtp://239.1.1.1:1234` 自动改写为 `http://<proxy>/rtp/239.1.1.1:1234`；
+  这是绝大多数家宽环境下唯一可行的组播方案
+- **组播地址规范化**：`MulticastUrlUtil` 统一处理 VLC 风格 `udp://@`、`udp://@@` 与
+  SSM 源地址段 `rtp://@src@group:port` 等写法
+- 新增单元测试 `MulticastUrlUtilTest`、`RtpPacketUtilTest`、`RtpReorderBufferTest`、
+  `SwitchableLoadControlTest`
+- 新增文档 `docs/multicast-udp-rtp.md`（配置方式、地址写法、实现要点与排查手册）
+- **FFmpeg 软解**：引入 `io.github.anilbeesetti:nextlib-media3ext:1.10.0-0.12.1`，
+  补上电视盒子硬解常缺的编码——组播 TS 高频的 MPEG-2 视频与 MP2/AC3/DTS 音频。
+  版本号中的 `1.10.0` 必须与 `media3_version` 一致，升级 Media3 时需同步
+- **解码方式设置**（`PlaybackDecoderMode`）：硬解优先（默认）/ 软解优先 / 仅硬解。
+  切换后立即重建播放器并续播当前频道（`RenderersFactory` 只能在 ExoPlayer 构建时指定）；
+  原生库不可用时设置页会给出提示
+- 全局开启 `setEnableDecoderFallback(true)`：某个 MediaCodec 解码器 configure 失败时
+  依次尝试同一渲染器里的其它 MediaCodec 解码器。注意它不会退到 FFmpeg 渲染器
+  （渲染器在 supportsFormat 阶段即已选定），硬解整体不可用时需切到「软解优先」档
+- 新增单元测试 `PlaybackDecoderModeTest`
+
+### Changed
+
+- 缓冲策略按流类型分档（`SwitchableLoadControl`）：HTTP/HLS 维持原有 35s/90s/6s/15s；
+  UDP/RTP（含经 udpxy 代理的）改为 8s/30s/1.5s/3s。组播是实时推流，服务端没有可回拉的缓冲，
+  厚缓冲只会单纯增加开播等待。两档共用同一内存池，换台时只切阈值、不重建 ExoPlayer
+- 直播 TS 解复用调参（`TsExtractor.MODE_SINGLE_PMT` + `FLAG_ALLOW_NON_IDR_KEYFRAMES`）
+  经 `MulticastAwareExtractorsFactory` **只作用于 `udp://` / `rtp://`**，起播更快；
+  HTTP 直连 `.ts` 等保持 Media3 默认——`MODE_SINGLE_PMT` 的「只有一个 PMT」假定
+  对来源不明的 TS（多节目 MPTS、中途重发 PMT）不成立，会导致 PID 映射走样
+  （症状为 `PesReader: Unexpected start code prefix`）。HLS 走
+  `DefaultHlsExtractorFactory`，两档都不影响它
+- 新增单元测试 `MulticastAwareExtractorsFactoryTest`
+- debug 构建挂载 ExoPlayer 官方 `EventLogger`（tag `PlayerManager-ev`），
+  可看到掉帧数、渲染器就绪状态、解码器初始化与状态变化原因；
+  并新增重缓冲计数日志（`Rebuffer #N ... after only Xms of playback`），
+  用于区分「缓冲慢慢耗干」与「起播后几十毫秒就又卡」这两种完全不同的故障
+- 组播收流新增诊断日志，用于区分「断流」与「播放器卡住」：每 10 秒一条吞吐心跳
+  （包速率/码率/累计丢包）、收包超时时打印距上一个包的时长与会话累计量、
+  `SO_RCVBUF` 被内核压缩时显式告警、关流时输出会话总结
+- **组播断流自动重新入组**（`MulticastStallPolicy`）：修复「组播播放数分钟后卡住、
+  退出频道重进才恢复」。成因是 IGMP 成员关系被上游交换机剪掉，重进之所以有效是因为
+  它重新 `joinGroup` 补发了 Membership Report。现在收包超时会原地离组再入组
+  （socket 与端口不变），健康的流永不触发，默认最多 2 次、约 9 秒后仍无数据才报错换源。
+  新增单元测试 `MulticastStallPolicyTest`
+- `PlayerManager` 新增 `getCurrentResolvedPlaybackUrl()`，与原始配置地址区分，便于排查组播改写
+- release 包限定 ABI 为 `armeabi-v7a` + `arm64-v8a`（Android TV 盒子全是 ARM），
+  避免 FFmpeg 原生库把 x86/x86_64 一起带上；debug 包保留全部 ABI 以便模拟器调试。
+  release APK 由约 7.7MB 增至约 18.9MB，其中原生库约 10.3MB
+
+### Fixed
+
+- **修复「起播成功后卡在缓冲再也不恢复」**：起播超时在 `STATE_READY` 时被取消后从未重新武装，
+  之后再进入 `STATE_BUFFERING` 就完全没有定时器看管。实测遇到过组播数据以满码率持续进来
+  （8Mbps、`rtpLost` 不再增长）、播放器却永远停在 BUFFERING 的情况。
+  新增重缓冲看门狗：超时后先原地重开当前线路（新解复用器、新采样队列、时间戳重新对齐），
+  连续 `MAX_STALL_RECOVERIES`（2）次无效才换源——单线路频道换源等于放弃，应优先原地恢复。
+  看门狗只在成功起播过之后才武装，与起播超时互斥，避免同一时刻两个定时器各做一次动作
+- **组播收包改为独立线程 + 环形缓冲**（`PacketRingBuffer`）：原先由 ExoPlayer 的 Loader 线程
+  直接 `receive()`，而那条线程还要做 TS 解复用、写采样队列、分配内存。UDP 是推模式，
+  内核缓冲（实测被夹到 512KB，8Mbps 下仅约 0.5 秒）一满就永久丢包，于是解码器一挣扎或 GC
+  一停顿就出现突发丢包（实测一次卡顿期间 `rtpLost` 由 0 涨到 71、`disc=11`），
+  坏数据又让解码更糟，形成恶性循环。现在收包线程只负责把 socket 抽干，
+  默认 2048 个数据报（约 4MB / 8Mbps 下 2.7 秒）的缓冲吸收消费侧抖动；
+  缓冲写满时丢最旧的并计入 `ringOverflow` 统计。新增单元测试 `PacketRingBufferTest`
+- 修复频道列表惯性滚动时按分组切换导致的崩溃
+  （`IllegalStateException: Cannot call removeView(At) within removeView(At)`）。
+  频道列表回收掉带焦点的行时，`ViewGroup.removeViewInternal` 会触发 `rootViewRequestFocus()`，
+  焦点从根节点重新分发并落到分组列表项上，同步回调 `onGroupFocused` →
+  `setAdapter()`，对正在回收中的同一个 RecyclerView 造成重入。
+  新增 `RecyclerViewUpdateGate`，在任一列表处于布局/滚动计算中时把更新推迟到下一帧；
+  `updateSelectedGroup` 里的 `notifyDataSetChanged` 也受同一道闸门保护
+- 新增单元测试 `RecyclerViewUpdateGateTest`
+
 ## [1.2.1] - 2026-04-13
 
 ### Changed

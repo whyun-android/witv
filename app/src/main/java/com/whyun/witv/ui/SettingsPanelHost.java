@@ -24,6 +24,16 @@ public interface SettingsPanelHost {
     default void onPlaybackOverlayPreferenceChanged() {
     }
 
+    /**
+     * 解码方式变更后由播放页重建播放器。RenderersFactory 只能在 ExoPlayer 构建时指定，
+     * 改不了，所以必须重建并重新挂载播放页自己的监听器。
+     *
+     * @return 是否已重建并续播（未在播放页或尚未初始化时为 false）
+     */
+    default boolean onPlaybackDecoderModeChanged() {
+        return false;
+    }
+
     /** 超时换源时长变更后由播放页刷新 PlayerManager 计时。 */
     default void onSourceSwitchTimeoutChanged() {
     }

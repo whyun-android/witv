@@ -15,6 +15,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.whyun.witv.R;
 import com.whyun.witv.data.db.entity.ChannelSource;
 import com.whyun.witv.data.db.entity.M3USource;
+import com.whyun.witv.player.MulticastUrlUtil;
+import com.whyun.witv.player.PlaybackDecoderMode;
 
 import java.util.Collections;
 import java.util.List;
@@ -33,6 +35,8 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
     static final int VT_EMPTY_HINT = 5;
     static final int VT_HELP_SUB = 6;
     static final int VT_SOURCE_TIMEOUT = 7;
+    static final int VT_MULTICAST_PROXY = 8;
+    static final int VT_DECODER_MODE = 9;
 
     public abstract static class Row {
         abstract int viewType();
@@ -106,6 +110,41 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         @Override
         int viewType() {
             return VT_EPG;
+        }
+    }
+
+    /** 解码方式单选行 */
+    public static final class DecoderModeRow extends Row {
+        final PlaybackDecoderMode mode;
+        final String title;
+        final String description;
+        final boolean selected;
+
+        public DecoderModeRow(PlaybackDecoderMode mode, String title, String description,
+                              boolean selected) {
+            this.mode = mode;
+            this.title = title;
+            this.description = description;
+            this.selected = selected;
+        }
+
+        @Override
+        int viewType() {
+            return VT_DECODER_MODE;
+        }
+    }
+
+    /** 组播转单播代理（udpxy）地址输入行 */
+    public static final class MulticastProxyRow extends Row {
+        final String proxyBase;
+
+        public MulticastProxyRow(String proxyBase) {
+            this.proxyBase = proxyBase != null ? proxyBase : "";
+        }
+
+        @Override
+        int viewType() {
+            return VT_MULTICAST_PROXY;
         }
     }
 
@@ -186,6 +225,11 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         void onHelpSubmenuClick(HelpSubRow.Kind kind);
 
         void onSourceTimeoutSeconds(int seconds);
+
+        /** @param proxyBase udpxy 前缀；空串表示直接收组播 */
+        void onSaveUdpxyProxy(String proxyBase);
+
+        void onPlaybackDecoderMode(PlaybackDecoderMode mode);
     }
 
     private List<Row> rows = Collections.emptyList();
@@ -217,9 +261,13 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
                 return new M3UVH(inf.inflate(R.layout.item_source, parent, false));
             case VT_STREAM:
             case VT_SOURCE_TIMEOUT:
+            case VT_DECODER_MODE:
                 return new StreamVH(inf.inflate(R.layout.item_settings_stream_row, parent, false));
             case VT_EPG:
                 return new EpgVH(inf.inflate(R.layout.item_settings_epg, parent, false));
+            case VT_MULTICAST_PROXY:
+                return new MulticastProxyVH(
+                        inf.inflate(R.layout.item_settings_multicast_proxy, parent, false));
             case VT_CHECK:
                 return new CheckVH(inf.inflate(R.layout.item_settings_check, parent, false));
             case VT_HELP_SUB:
@@ -245,11 +293,15 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         } else if (holder instanceof StreamVH) {
             if (row instanceof StreamRow) {
                 ((StreamVH) holder).bind((StreamRow) row, listener);
+            } else if (row instanceof DecoderModeRow) {
+                ((StreamVH) holder).bind((DecoderModeRow) row, listener);
             } else {
                 ((StreamVH) holder).bind((SourceTimeoutRow) row, listener);
             }
         } else if (holder instanceof EpgVH) {
             ((EpgVH) holder).bind(((EpgRow) row).epgUrl, listener);
+        } else if (holder instanceof MulticastProxyVH) {
+            ((MulticastProxyVH) holder).bind(((MulticastProxyRow) row).proxyBase, listener);
         } else if (holder instanceof CheckVH) {
             ((CheckVH) holder).bind((CheckRow) row, listener);
         } else if (holder instanceof HelpSubVH) {
@@ -333,6 +385,24 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
             });
         }
 
+        void bind(DecoderModeRow row, Listener listener) {
+            label.setText(row.title);
+            url.setText(row.description);
+            url.setVisibility(View.VISIBLE);
+            currentBadge.setVisibility(row.selected ? View.VISIBLE : View.GONE);
+            itemView.setOnClickListener(v -> listener.onPlaybackDecoderMode(row.mode));
+            itemView.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                    return false;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                    listener.onPlaybackDecoderMode(row.mode);
+                    return true;
+                }
+                return false;
+            });
+        }
+
         void bind(SourceTimeoutRow row, Listener listener) {
             label.setText(itemView.getContext().getString(R.string.source_timeout_seconds_format, row.seconds));
             url.setVisibility(View.GONE);
@@ -369,6 +439,51 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
             }
             save.setOnClickListener(v -> listener.onSaveEpg(input.getText().toString().trim()));
             reload.setOnClickListener(v -> listener.onReloadEpg(input.getText().toString().trim()));
+        }
+    }
+
+    static final class MulticastProxyVH extends RecyclerView.ViewHolder {
+        final EditText input;
+        final TextView preview;
+        final Button save;
+        final Button clear;
+
+        MulticastProxyVH(@NonNull View itemView) {
+            super(itemView);
+            input = itemView.findViewById(R.id.multicast_proxy_input);
+            preview = itemView.findViewById(R.id.multicast_proxy_preview);
+            save = itemView.findViewById(R.id.btn_save_multicast_proxy);
+            clear = itemView.findViewById(R.id.btn_clear_multicast_proxy);
+        }
+
+        void bind(String proxyBase, Listener listener) {
+            if (!proxyBase.equals(input.getText().toString())) {
+                input.setText(proxyBase);
+            }
+            updatePreview(proxyBase);
+            save.setOnClickListener(v -> {
+                String normalized =
+                        MulticastUrlUtil.normalizeProxyBase(input.getText().toString());
+                // 回填规范化结果，让用户直接看到实际会用的地址
+                input.setText(normalized);
+                updatePreview(normalized);
+                listener.onSaveUdpxyProxy(normalized);
+            });
+            clear.setOnClickListener(v -> {
+                input.setText("");
+                updatePreview("");
+                listener.onSaveUdpxyProxy("");
+            });
+        }
+
+        /** 用一条示例频道展示改写效果，比单看前缀直观 */
+        private void updatePreview(String proxyBase) {
+            if (proxyBase == null || proxyBase.isEmpty()) {
+                preview.setText(R.string.multicast_proxy_preview_direct);
+            } else {
+                preview.setText(preview.getContext()
+                        .getString(R.string.multicast_proxy_preview_format, proxyBase));
+            }
         }
     }
 

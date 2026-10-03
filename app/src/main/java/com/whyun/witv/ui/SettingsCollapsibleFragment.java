@@ -27,6 +27,9 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.whyun.witv.BuildConfig;
 import com.whyun.witv.R;
 import com.whyun.witv.data.PreferenceManager;
+import com.whyun.witv.player.PlaybackDecoderMode;
+
+import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.entity.ChannelSource;
 import com.whyun.witv.data.db.entity.M3USource;
@@ -54,6 +57,8 @@ public class SettingsCollapsibleFragment extends Fragment
     public static final int CAT_PLAYBACK = 4;
     public static final int CAT_HELP = 5;
     public static final int CAT_SOURCE_TIMEOUT = 6;
+    public static final int CAT_MULTICAST = 7;
+    public static final int CAT_DECODER = 8;
 
     private SettingsPanelHost host;
 
@@ -419,6 +424,10 @@ public class SettingsCollapsibleFragment extends Fragment
                 ctx.getString(R.string.settings_group_epg)));
         items.add(new SettingsMainMenuAdapter.Item(CAT_PLAYBACK,
                 ctx.getString(R.string.settings_group_playback)));
+        items.add(new SettingsMainMenuAdapter.Item(CAT_MULTICAST,
+                ctx.getString(R.string.settings_group_multicast)));
+        items.add(new SettingsMainMenuAdapter.Item(CAT_DECODER,
+                ctx.getString(R.string.settings_group_decoder)));
         items.add(new SettingsMainMenuAdapter.Item(CAT_HELP,
                 ctx.getString(R.string.settings_help_title)));
         mainMenuAdapter.setItems(items);
@@ -564,6 +573,26 @@ public class SettingsCollapsibleFragment extends Fragment
                         ctx.getString(R.string.reverse_channel_keys),
                         ctx.getString(R.string.reverse_channel_keys_hint)));
                 break;
+            case CAT_MULTICAST:
+                rows.add(new SettingsPanelAdapter.MulticastProxyRow(
+                        preferenceManager.getUdpxyProxyBase()));
+                break;
+            case CAT_DECODER: {
+                if (!isFfmpegSoftwareDecoderAvailable()) {
+                    // ABI 不匹配或原生库被裁掉时，软解相关选项其实无效，先讲清楚
+                    rows.add(new SettingsPanelAdapter.EmptyHintRow(
+                            ctx.getString(R.string.decoder_mode_ffmpeg_missing)));
+                }
+                PlaybackDecoderMode current = preferenceManager.getPlaybackDecoderMode();
+                for (PlaybackDecoderMode mode : PlaybackDecoderMode.values()) {
+                    rows.add(new SettingsPanelAdapter.DecoderModeRow(
+                            mode,
+                            ctx.getString(decoderModeTitleRes(mode)),
+                            ctx.getString(decoderModeDescriptionRes(mode)),
+                            mode == current));
+                }
+                break;
+            }
             case CAT_HELP:
                 if (host.shouldShowPlaybackMediaInfoHelp()) {
                     rows.add(new SettingsPanelAdapter.HelpSubRow(
@@ -785,6 +814,67 @@ public class SettingsCollapsibleFragment extends Fragment
                 Toast.LENGTH_SHORT).show();
         host.onSourceSwitchTimeoutChanged();
         rebuildSubmenuIfOpen();
+    }
+
+    /** FFmpeg 原生库是否可加载；加载失败不应让设置页崩溃。 */
+    private static boolean isFfmpegSoftwareDecoderAvailable() {
+        try {
+            return FfmpegLibrary.isAvailable();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static int decoderModeTitleRes(PlaybackDecoderMode mode) {
+        switch (mode) {
+            case PREFER_SOFTWARE:
+                return R.string.decoder_mode_prefer_software;
+            case HARDWARE_ONLY:
+                return R.string.decoder_mode_hardware_only;
+            case AUTO:
+            default:
+                return R.string.decoder_mode_auto;
+        }
+    }
+
+    private static int decoderModeDescriptionRes(PlaybackDecoderMode mode) {
+        switch (mode) {
+            case PREFER_SOFTWARE:
+                return R.string.decoder_mode_prefer_software_desc;
+            case HARDWARE_ONLY:
+                return R.string.decoder_mode_hardware_only_desc;
+            case AUTO:
+            default:
+                return R.string.decoder_mode_auto_desc;
+        }
+    }
+
+    @Override
+    public void onPlaybackDecoderMode(PlaybackDecoderMode mode) {
+        if (mode == preferenceManager.getPlaybackDecoderMode()) {
+            return;
+        }
+        preferenceManager.setPlaybackDecoderMode(mode);
+        boolean rebuilt = host.onPlaybackDecoderModeChanged();
+        Toast.makeText(requireContext(),
+                rebuilt
+                        ? getString(R.string.decoder_mode_saved,
+                                getString(decoderModeTitleRes(mode)))
+                        : getString(R.string.decoder_mode_saved_next_playback,
+                                getString(decoderModeTitleRes(mode))),
+                Toast.LENGTH_SHORT).show();
+        rebuildSubmenuIfOpen();
+    }
+
+    @Override
+    public void onSaveUdpxyProxy(String proxyBase) {
+        preferenceManager.setUdpxyProxyBase(proxyBase);
+        String saved = preferenceManager.getUdpxyProxyBase();
+        Toast.makeText(requireContext(),
+                saved.isEmpty()
+                        ? getString(R.string.multicast_proxy_cleared)
+                        : getString(R.string.multicast_proxy_saved),
+                Toast.LENGTH_SHORT).show();
     }
 
     @Override

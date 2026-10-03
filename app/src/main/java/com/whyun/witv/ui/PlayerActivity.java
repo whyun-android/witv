@@ -893,6 +893,27 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         }
     }
 
+    /**
+     * 解码方式变更：RenderersFactory 只能在构建 ExoPlayer 时指定，必须重建播放器，
+     * 重建前后要把本页挂在旧实例上的监听器摘下、重新挂到新实例上。
+     */
+    @Override
+    public boolean onPlaybackDecoderModeChanged() {
+        if (playerManager == null) {
+            return false;
+        }
+        ExoPlayer oldPlayer = playerManager.getPlayer();
+        if (oldPlayer != null) {
+            oldPlayer.removeListener(mediaInfoListener);
+        }
+        boolean rebuilt = playerManager.reinitializeForDecoderModeChange();
+        ExoPlayer newPlayer = playerManager.getPlayer();
+        if (newPlayer != null) {
+            newPlayer.addListener(mediaInfoListener);
+        }
+        return rebuilt;
+    }
+
     @Override
     public void showPlaybackMediaInfoDialog() {
         if (currentChannel == null || playerManager == null) {
@@ -1031,6 +1052,14 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     private void updateSelectedGroup(int position, boolean requestChannelFocus) {
+        // 分组焦点可能是频道列表回收带焦点行、焦点逃到根节点重新分发时同步落过来的，
+        // 此时两个列表都可能正在布局中，setSelectedIndex 的 notifyDataSetChanged 与
+        // 下面的 setAdapter 都会抛 IllegalStateException。见 RecyclerViewUpdateGate。
+        if (RecyclerViewUpdateGate.postponeIfBusy(channelListOverlay,
+                () -> updateSelectedGroup(position, requestChannelFocus),
+                channelListOverlay, channelGroupListOverlay)) {
+            return;
+        }
         if (position < 0 || position >= visibleChannelGroups.size()) {
             return;
         }
@@ -1049,6 +1078,12 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     private void bindChannelListForSelectedGroup(boolean requestChannelFocus) {
+        // 也可能被 updateSelectedGroup 之外的路径直接调用，这里再挡一次
+        if (RecyclerViewUpdateGate.postponeIfBusy(channelListOverlay,
+                () -> bindChannelListForSelectedGroup(requestChannelFocus),
+                channelListOverlay, channelGroupListOverlay)) {
+            return;
+        }
         int selectedIndexInGroup = findCurrentChannelIndexInVisibleChannels();
         ChannelListAdapter adapter = new ChannelListAdapter(visibleChannels, selectedIndexInGroup, currentFavoriteIds, channel -> {
             cancelChannelListIdleHide();
