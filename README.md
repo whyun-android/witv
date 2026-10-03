@@ -31,14 +31,14 @@ Android TV M3U 直播播放器，使用原生 ExoPlayer 播放，支持多源自
 |------|------|
 | 播放器 | Media3 ExoPlayer 1.10.0 |
 | 软件解码 | NextLib media3ext 1.10.0-0.12.1（FFmpeg） |
-| TV 界面 | Leanback 1.2.0 |
+| TV 界面 | 原生 View + RecyclerView（声明 LEANBACK_LAUNCHER，未使用 androidx.leanback 库） |
 | 数据库 | Room 2.6.1 |
 | HTTP 服务器 | NanoHTTPD 2.3.1 |
 | 网络请求 | OkHttp 4.12.0 |
 | JSON | Gson 2.10.1 |
 | 图片加载 | Glide 4.16.0 |
 | 语言 | Java |
-| 最低支持 | Android 5.0 (API 21) |
+| 最低支持 | Android 6.0 (API 23)，Media3 1.9+ 与 AndroidX 对齐的要求 |
 
 ## 构建
 
