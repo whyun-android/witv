@@ -23,6 +23,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 该 action 默认安装 'tools platform-tools'，而废弃的 'tools' 包已被 Google
+          # 从 SDK 仓库下架，sdkmanager 会直接报 "Failed to find package 'tools'" 而失败。
+          packages: 'platform-tools'
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
