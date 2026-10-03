@@ -22,6 +22,15 @@ public final class RtpReorderBuffer {
     private static final int SEQ_MASK = 0xFFFF;
     private static final int SEQ_HALF = 0x8000;
 
+    /**
+     * 连续这么多个包都被判为「迟到」就认定发送端换了序号空间，按新起点重新同步。
+     *
+     * <p>发送端重启会把序号重置到一个更小的值。如果新起点落在当前期望值「之前」的半个序号空间里，
+     * 每个新包都会被当成迟到丢弃，最坏要丢 32767 个包（760pkt/s 下约 43 秒黑屏）才会自然追上。
+     * 正常网络不会出现连续几十个迟到包，所以这个阈值不会误伤。
+     */
+    private static final int LATE_PACKETS_BEFORE_RESYNC = 64;
+
     private final int capacity;
     private final int indexMask;
     private final int flushThreshold;
@@ -35,6 +44,8 @@ public final class RtpReorderBuffer {
     private boolean started;
     private int expectedSequence;
     private int pending;
+
+    private int consecutiveLatePackets;
 
     private long lostPackets;
     private long latePackets;
@@ -82,8 +93,16 @@ public final class RtpReorderBuffer {
         if (diff >= SEQ_HALF) {
             // 序号早于当前期望：迟到或重复，直接丢弃
             latePackets++;
-            return;
+            if (++consecutiveLatePackets < LATE_PACKETS_BEFORE_RESYNC) {
+                return;
+            }
+            // 连续这么多个都「迟到」只能是发送端重启换了序号空间，按新起点重来
+            discontinuities++;
+            clearSlots();
+            expectedSequence = seq;
+            diff = 0;
         }
+        consecutiveLatePackets = 0;
         if (diff >= capacity) {
             // 跳变超出窗口：丢弃积压，以当前包为新起点
             discontinuities++;
@@ -160,6 +179,7 @@ public final class RtpReorderBuffer {
         clearSlots();
         started = false;
         expectedSequence = 0;
+        consecutiveLatePackets = 0;
         lostPackets = 0;
         latePackets = 0;
         discontinuities = 0;

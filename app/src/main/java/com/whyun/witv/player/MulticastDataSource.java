@@ -21,11 +21,17 @@ import androidx.media3.datasource.UdpDataSource;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -37,7 +43,7 @@ import java.util.Locale;
  *       Loader 线程直接 {@code receive()}，那条线程还要做 TS 解复用、写采样队列、分配内存，
  *       解码器一挣扎或 GC 一停顿就会突发丢包。见 {@link PacketRingBuffer}。</li>
  *   <li>可配置 {@code SO_RCVBUF}，并在被内核夹小时告警；</li>
- *   <li>按当前活动网络选择组播网卡 join，避免多网卡（WiFi + 以太网）设备 join 错网卡收不到流；</li>
+ *   <li>在所有可用组播网卡上 join，避免多网卡（WiFi + 以太网）设备 join 错网卡收不到流；</li>
  *   <li>自动持有 WiFi 组播锁，断流时自动重新入组（见 {@link MulticastStallPolicy}）；</li>
  *   <li>{@code rtp://} 剥 RTP 头并做乱序重排；源实际发的是裸 TS 时自动回退为透传。</li>
  * </ul>
@@ -64,6 +70,9 @@ public final class MulticastDataSource extends BaseDataSource {
 
     /** 吞吐统计打印间隔。断流前后的速率变化靠它定位。 */
     private static final long STATS_INTERVAL_MS = 10_000L;
+
+    /** 消费侧等待在收包线程恢复预算之外额外留的余量 */
+    private static final long CONSUMER_WAIT_SLACK_MS = 2_000L;
 
     private final Context appContext;
     private final int maxPacketSize;
@@ -115,8 +124,8 @@ public final class MulticastDataSource extends BaseDataSource {
 
     @Nullable
     private InetSocketAddress joinedGroup;
-    @Nullable
-    private NetworkInterface joinedInterface;
+    /** 已成功加入组的网卡；open() 之后不再修改，可跨线程安全读取 */
+    private volatile List<NetworkInterface> joinedInterfaces = Collections.emptyList();
     private boolean lockAcquired;
     private boolean opened;
 
@@ -225,7 +234,7 @@ public final class MulticastDataSource extends BaseDataSource {
         Log.i(TAG, String.format(Locale.US,
                 "Opened %s (rtp=%b, rcvbuf=%d, ring=%d pkts, timeout=%dms, iface=%s)",
                 openUri, rtpMode, actualReceiveBufferSize(), ringBufferPackets, socketTimeoutMs,
-                joinedInterface != null ? joinedInterface.getName() : "default"));
+                describeJoinedInterfaces()));
         return C.LENGTH_UNSET;
     }
 
@@ -363,22 +372,81 @@ public final class MulticastDataSource extends BaseDataSource {
         statsWindowBytes = 0;
     }
 
+    /**
+     * 在所有可用的组播网卡上加入该组。
+     *
+     * <p>不能只认 {@code getActiveNetwork()}：IPTV 常接在没有公网的以太网口上，Android 不会把
+     * 这种网络当作活动网络；此时在 WiFi 上 {@code joinGroup} 会「成功」（不抛异常），但一个组播包
+     * 都收不到，而基于异常的回退永远不会触发。多 join 几张网卡的代价只是几个 IGMP 报文，
+     * 换来的是多网卡盒子上能真正收到流。
+     */
     private void joinMulticastGroup(MulticastSocket target, InetAddress address,
                                     InetSocketAddress group) throws IOException {
-        NetworkInterface preferred = resolveActiveMulticastInterface();
-        if (preferred != null) {
+        List<NetworkInterface> joined = new ArrayList<>();
+        for (NetworkInterface ni : collectMulticastInterfaces()) {
             try {
-                target.joinGroup(group, preferred);
-                joinedInterface = preferred;
-                return;
+                target.joinGroup(group, ni);
+                joined.add(ni);
             } catch (IOException e) {
-                Log.w(TAG, "joinGroup on " + preferred.getName() + " failed, falling back: "
-                        + e.getMessage());
+                Log.d(TAG, "joinGroup on " + ni.getName() + " failed: " + e.getMessage());
             }
         }
-        // 回退：由系统路由表选择出口网卡
+        if (!joined.isEmpty()) {
+            joinedInterfaces = Collections.unmodifiableList(joined);
+            return;
+        }
+        // 一张都没成功：回退到由系统路由表选择出口网卡
+        Log.w(TAG, "No interface accepted the multicast join; falling back to system routing");
         target.joinGroup(address);
-        joinedInterface = null;
+        joinedInterfaces = Collections.emptyList();
+    }
+
+    /** 候选网卡：活动网络优先（通常就是对的那张），其余可用组播网卡随后。 */
+    private List<NetworkInterface> collectMulticastInterfaces() {
+        List<NetworkInterface> candidates = new ArrayList<>();
+        NetworkInterface preferred = resolveActiveMulticastInterface();
+        if (preferred != null) {
+            candidates.add(preferred);
+        }
+        try {
+            Enumeration<NetworkInterface> all = NetworkInterface.getNetworkInterfaces();
+            while (all != null && all.hasMoreElements()) {
+                NetworkInterface ni = all.nextElement();
+                if (isUsableMulticastInterface(ni) && !containsByName(candidates, ni)) {
+                    candidates.add(ni);
+                }
+            }
+        } catch (SocketException e) {
+            Log.w(TAG, "Unable to enumerate network interfaces: " + e.getMessage());
+        }
+        return candidates;
+    }
+
+    private static boolean containsByName(List<NetworkInterface> list, NetworkInterface ni) {
+        for (NetworkInterface existing : list) {
+            if (existing.getName().equals(ni.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isUsableMulticastInterface(NetworkInterface ni) {
+        try {
+            if (ni.isLoopback() || !ni.isUp() || !ni.supportsMulticast()) {
+                return false;
+            }
+            // 没有 IPv4 地址的网卡上 join IPv4 组播没有意义
+            Enumeration<InetAddress> addresses = ni.getInetAddresses();
+            while (addresses.hasMoreElements()) {
+                if (addresses.nextElement() instanceof Inet4Address) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (SocketException e) {
+            return false;
+        }
     }
 
     /**
@@ -397,26 +465,47 @@ public final class MulticastDataSource extends BaseDataSource {
                 "Rejoining multicast group %s (attempt %d/%d)",
                 group.getAddress().getHostAddress(),
                 stallPolicy.getRejoinCount(), stallPolicy.getMaxRejoinAttempts()));
-        try {
-            if (joinedInterface != null) {
-                active.leaveGroup(group, joinedInterface);
-            } else {
-                active.leaveGroup(group.getAddress());
-            }
-        } catch (Exception e) {
-            // 已经不是成员了也无所谓，下面照样重新 join
-            Log.w(TAG, "leaveGroup during rejoin failed (ignored): " + e.getMessage());
-        }
-        try {
-            if (joinedInterface != null) {
-                active.joinGroup(group, joinedInterface);
-            } else {
+        List<NetworkInterface> interfaces = joinedInterfaces;
+        // 已经不是成员了也无所谓，下面照样重新 join
+        leaveGroupQuietly(active, group, interfaces);
+        if (interfaces.isEmpty()) {
+            try {
                 active.joinGroup(group.getAddress());
+                return true;
+            } catch (IOException e) {
+                Log.w(TAG, "Rejoin failed: " + e.getMessage());
+                return false;
             }
-            return true;
-        } catch (IOException e) {
-            Log.w(TAG, "Rejoin failed: " + e.getMessage());
-            return false;
+        }
+        int rejoined = 0;
+        for (NetworkInterface ni : interfaces) {
+            try {
+                active.joinGroup(group, ni);
+                rejoined++;
+            } catch (IOException e) {
+                Log.w(TAG, "Rejoin on " + ni.getName() + " failed: " + e.getMessage());
+            }
+        }
+        return rejoined > 0;
+    }
+
+    private static void leaveGroupQuietly(MulticastSocket target, InetSocketAddress group,
+                                          List<NetworkInterface> interfaces) {
+        if (interfaces.isEmpty()) {
+            try {
+                target.leaveGroup(group.getAddress());
+            } catch (Exception e) {
+                Log.d(TAG, "leaveGroup failed (ignored): " + e.getMessage());
+            }
+            return;
+        }
+        for (NetworkInterface ni : interfaces) {
+            try {
+                target.leaveGroup(group, ni);
+            } catch (Exception e) {
+                Log.d(TAG, "leaveGroup on " + ni.getName() + " failed (ignored): "
+                        + e.getMessage());
+            }
         }
     }
 
@@ -482,10 +571,13 @@ public final class MulticastDataSource extends BaseDataSource {
             throw wrap(new IOException("Data source closed"),
                     PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED);
         }
-        long waitMs = socketTimeoutMs * 2L;
+        // 必须比收包线程的完整恢复过程更长，否则会在它最后一次重新入组还没来得及收到包时
+        // 就先行放弃，等于白配了重入组预算
+        long waitMs = consumerWaitMs(socketTimeoutMs, stallPolicy.getMaxRejoinAttempts());
         int length;
         try {
-            // 比 socket 超时更宽：收包线程自己会先重试、重新入组，这里只兜它彻底失败的情况
+            // 收包线程彻底失败时会写 readerError 并关闭环形缓冲，这里会被立刻唤醒，
+            // 所以这个超时只是兜底
             length = ring.poll(consumerBuffer, waitMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -508,6 +600,16 @@ public final class MulticastDataSource extends BaseDataSource {
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT);
     }
 
+    /**
+     * 消费侧的等待时长：收包线程会先超时一次、再重新入组 {@code maxRejoinAttempts} 次，
+     * 每次各等一个 socket 超时，所以消费侧至少要等 {@code (maxRejoinAttempts + 1)} 个超时周期，
+     * 外加一点余量。
+     */
+    static long consumerWaitMs(int socketTimeoutMs, int maxRejoinAttempts) {
+        return (long) socketTimeoutMs * (Math.max(0, maxRejoinAttempts) + 1)
+                + CONSUMER_WAIT_SLACK_MS;
+    }
+
     @Override
     @Nullable
     public Uri getUri() {
@@ -521,15 +623,7 @@ public final class MulticastDataSource extends BaseDataSource {
         MulticastSocket active = socket;
         if (active != null) {
             if (joinedGroup != null) {
-                try {
-                    if (joinedInterface != null) {
-                        active.leaveGroup(joinedGroup, joinedInterface);
-                    } else {
-                        active.leaveGroup(joinedGroup.getAddress());
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "leaveGroup failed: " + e.getMessage());
-                }
+                leaveGroupQuietly(active, joinedGroup, joinedInterfaces);
             }
             // 关闭 socket 会让阻塞中的 receive() 立刻抛异常，收包线程据此退出
             closeQuietly(active);
@@ -552,7 +646,7 @@ public final class MulticastDataSource extends BaseDataSource {
         readerThread = null;
 
         joinedGroup = null;
-        joinedInterface = null;
+        joinedInterfaces = Collections.emptyList();
         releaseLock();
 
         if (opened) {
@@ -579,6 +673,21 @@ public final class MulticastDataSource extends BaseDataSource {
             opened = false;
             transferEnded();
         }
+    }
+
+    private String describeJoinedInterfaces() {
+        List<NetworkInterface> interfaces = joinedInterfaces;
+        if (interfaces.isEmpty()) {
+            return "system-routing";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (NetworkInterface ni : interfaces) {
+            if (sb.length() > 0) {
+                sb.append('+');
+            }
+            sb.append(ni.getName());
+        }
+        return sb.toString();
     }
 
     private void releaseLock() {

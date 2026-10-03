@@ -142,6 +142,15 @@ public class PlayerManager {
      */
     static final int MAX_STALL_RECOVERIES = 2;
 
+    /**
+     * 播放持续这么久才算「真正恢复」，恢复预算才会重置。
+     *
+     * <p>不能在收到 READY 时就无条件重置：坏源常见的形态正是「重开→READY 几十毫秒→又卡」，
+     * 那样每次看门狗都被当成第一次尝试，{@link #MAX_STALL_RECOVERIES} 永远到不了，
+     * 播放器会无限重开同一条坏线路而不换源。
+     */
+    static final long STALL_RECOVERY_RESET_AFTER_MS = 30_000L;
+
     private static String playbackStateName(int state) {
         switch (state) {
             case Player.STATE_IDLE:
@@ -165,34 +174,12 @@ public class PlayerManager {
                 return;
             }
             if (playbackState == Player.STATE_READY) {
-                cancelTimeout();
-                cancelRebufferWatchdog();
-                consecutiveStallRecoveries = 0;
-                hasStartedPlayback = true;
-                lastReadyAtMs = SystemClock.elapsedRealtime();
-                isRetrying = false;
-                Log.i(TAG, "Playback started, source index: " + currentSourceIndex);
-                if (callback != null) {
-                    callback.onPlaybackStarted(currentSourceIndex, currentSources.size());
-                }
+                onPlaybackReady();
             } else if (playbackState == Player.STATE_ENDED) {
                 cancelTimeout();
                 cancelRebufferWatchdog();
             } else if (playbackState == Player.STATE_BUFFERING) {
-                if (hasStartedPlayback) {
-                    rebufferCount++;
-                    // 「起播后几十毫秒就又卡」说明不是数据不够，而是渲染器 ready 不了
-                    // （解码跟不上实时等），和「缓冲慢慢耗干」是两种完全不同的故障。
-                    Log.w(TAG, String.format(Locale.US,
-                            "Rebuffer #%d on source %d/%d after only %dms of playback",
-                            rebufferCount, currentSourceIndex + 1, currentSources.size(),
-                            SystemClock.elapsedRealtime() - lastReadyAtMs));
-                } else {
-                    Log.d(TAG, "Buffering...");
-                }
-                // 起播超时在 READY 时就被取消了，之后再卡住本来无人看管：
-                // 数据还在进但播放器消化不动（TS 时间戳错乱等）会无限停在这里。
-                startRebufferWatchdog();
+                onEnteredBuffering();
             }
         }
 
@@ -235,6 +222,41 @@ public class PlayerManager {
             switchToNextSource(reason);
         }
     };
+
+    /** 进入 {@code STATE_READY}。注意这里**不**重置恢复预算，见 {@link #STALL_RECOVERY_RESET_AFTER_MS}。 */
+    void onPlaybackReady() {
+        cancelTimeout();
+        cancelRebufferWatchdog();
+        hasStartedPlayback = true;
+        lastReadyAtMs = SystemClock.elapsedRealtime();
+        isRetrying = false;
+        Log.i(TAG, "Playback started, source index: " + currentSourceIndex);
+        if (callback != null) {
+            callback.onPlaybackStarted(currentSourceIndex, currentSources.size());
+        }
+    }
+
+    /** 进入 {@code STATE_BUFFERING}。 */
+    void onEnteredBuffering() {
+        if (hasStartedPlayback) {
+            long playedMs = SystemClock.elapsedRealtime() - lastReadyAtMs;
+            rebufferCount++;
+            if (playedMs >= STALL_RECOVERY_RESET_AFTER_MS) {
+                // 稳定播放了足够久，这次卡顿与之前的无关，重新给满恢复预算
+                consecutiveStallRecoveries = 0;
+            }
+            // 「起播后几十毫秒就又卡」说明不是数据不够，而是渲染器 ready 不了
+            // （解码跟不上实时等），和「缓冲慢慢耗干」是两种完全不同的故障。
+            Log.w(TAG, String.format(Locale.US,
+                    "Rebuffer #%d on source %d/%d after only %dms of playback",
+                    rebufferCount, currentSourceIndex + 1, currentSources.size(), playedMs));
+        } else {
+            Log.d(TAG, "Buffering...");
+        }
+        // 起播超时在 READY 时就被取消了，之后再卡住本来无人看管：
+        // 数据还在进但播放器消化不动（TS 时间戳错乱等）会无限停在这里。
+        startRebufferWatchdog();
+    }
 
     public PlayerManager(Context context) {
         this.context = context;
@@ -569,6 +591,8 @@ public class PlayerManager {
                 "Switching source — reason: %s | failedSource: %d/%d | url: %s",
                 reason, failedIndex + 1, currentSources.size(), failedUrl));
         isRetrying = true;
+        // 换到另一条线路，恢复预算重新给满
+        consecutiveStallRecoveries = 0;
         currentSourceIndex++;
         playCurrentSource();
     }
@@ -582,6 +606,7 @@ public class PlayerManager {
 
     public void manualSwitchSource(int index) {
         if (index >= 0 && index < currentSources.size()) {
+            consecutiveStallRecoveries = 0;
             String url = currentSources.get(index).url;
             Log.i(TAG, String.format(Locale.US,
                     "Manual switch source — target: %d/%d | url: %s",
@@ -608,6 +633,11 @@ public class PlayerManager {
                 return;
             }
             if (player == null || player.getPlaybackState() != Player.STATE_BUFFERING) {
+                return;
+            }
+            if (!player.getPlayWhenReady()) {
+                // 用户已暂停或退到后台：恢复动作会把 playWhenReady 重新置真，
+                // 等于在后台偷偷续播。此处只继续看管，不动作。
                 return;
             }
             onRebufferStall(timeoutMs);
@@ -714,12 +744,18 @@ public class PlayerManager {
     public void pause() {
         if (player != null) {
             player.setPlayWhenReady(false);
+            // 暂停期间不看管卡顿，避免看门狗把播放重新拉起来
+            cancelRebufferWatchdog();
         }
     }
 
     public void resume() {
         if (player != null) {
             player.setPlayWhenReady(true);
+            if (hasStartedPlayback && player.getPlaybackState() == Player.STATE_BUFFERING) {
+                // 暂停时取消过，恢复后若仍卡着就重新看管
+                startRebufferWatchdog();
+            }
         }
     }
 

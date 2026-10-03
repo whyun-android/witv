@@ -87,6 +87,30 @@ public class MulticastStallPolicyTest {
         assertTrue(policy.shouldRejoin());
     }
 
+    /**
+     * 消费侧的等待必须长过收包线程的完整恢复过程，否则会在最后一次重新入组还没来得及收到包时
+     * 就先行放弃，等于白配了重入组预算。
+     */
+    @Test
+    public void consumerOutwaitsTheWholeRejoinBudget() {
+        int timeout = MulticastDataSource.DEFAULT_SOCKET_TIMEOUT_MS;
+        int attempts = MulticastStallPolicy.DEFAULT_MAX_REJOIN_ATTEMPTS;
+
+        long readerGivesUpAtMs = (long) timeout * (attempts + 1);
+        long consumerWaitMs = MulticastDataSource.consumerWaitMs(timeout, attempts);
+
+        assertTrue("消费侧(" + consumerWaitMs + "ms) 必须长过收包线程放弃的时刻("
+                        + readerGivesUpAtMs + "ms)",
+                consumerWaitMs > readerGivesUpAtMs);
+    }
+
+    @Test
+    public void consumerWaitHandlesZeroRejoinBudget() {
+        // 不重入组时也至少要等满一个 socket 超时周期
+        assertTrue(MulticastDataSource.consumerWaitMs(3_000, 0) > 3_000L);
+        assertTrue(MulticastDataSource.consumerWaitMs(3_000, -1) > 3_000L);
+    }
+
     @Test
     public void defaultBudgetCoversAboutNineSecondsAtThreeSecondTimeout() {
         // 3s 收包超时 × (1 次首发超时 + 2 次重入组) ≈ 9s 才判定断流，

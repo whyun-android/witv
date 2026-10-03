@@ -77,6 +77,23 @@
   坏数据又让解码更糟，形成恶性循环。现在收包线程只负责把 socket 抽干，
   默认 2048 个数据报（约 4MB / 8Mbps 下 2.7 秒）的缓冲吸收消费侧抖动；
   缓冲写满时丢最旧的并计入 `ringOverflow` 统计。新增单元测试 `PacketRingBufferTest`
+- **修复坏线路无限重开不换源**：恢复预算原先在每次进入 `STATE_READY` 时无条件重置，
+  而坏源的典型形态正是「重开 → READY 几十毫秒 → 又卡」，于是每次看门狗都被当作第一次尝试，
+  `MAX_STALL_RECOVERIES` 永远到不了。改为只有持续播放超过 30 秒才算真正恢复
+- **修复暂停后看门狗把播放重新拉起**：退到后台时 `playWhenReady` 已被置假，
+  但已武装的看门狗仍会调用 `playCurrentSource()` 将其重置为真，造成后台偷偷续播。
+  现在 `pause()` 取消看门狗、`resume()` 在仍卡顿时重新武装，看门狗自身也校验 `playWhenReady`
+- **修复多网卡设备 join 错网卡收不到流**：原先只认 `getActiveNetwork()`，
+  而 IPTV 常接在没有公网的以太网口上，Android 不会把它当作活动网络；
+  此时在 WiFi 上 `joinGroup` 会「成功」但一个包都收不到，基于异常的回退永不触发。
+  改为在所有可用组播网卡上一并 join
+- **修复 RTP 发送端重启后长时间黑屏**：发送端重启会把序号重置到更小的值，
+  落在当前期望值之前的半个序号空间时每个包都被判为迟到，最坏要丢 32767 个包
+  （约 43 秒）才会自然追上。现在连续迟到 64 个即按新起点重新同步
+- **修复消费侧提前放弃重入组**：消费侧原先只等 `socketTimeoutMs * 2`（6 秒），
+  而收包线程要到约 9 秒才用完重入组预算，最后一次尝试还没来得及收包就被放弃
+- **修复 udpxy 流被写入磁盘缓存**：`LoggingPlaybackDataSource` 对非 `.ts` 请求同样走缓存委托，
+  经 udpxy 代理的无界组播流会被持续写入 96MB 缓存并持续淘汰，造成盒子闪存的无谓损耗
 - 修复频道列表惯性滚动时按分组切换导致的崩溃
   （`IllegalStateException: Cannot call removeView(At) within removeView(At)`）。
   频道列表回收掉带焦点的行时，`ViewGroup.removeViewInternal` 会触发 `rootViewRequestFocus()`，

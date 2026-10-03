@@ -677,7 +677,9 @@ public final class HlsSegmentPrefetcher {
             if (isTsRequest) {
                 bypassCache = onPlaybackSegmentRequested(dataSpec.uri);
             }
-            if (bypassCache) {
+            // 非 ts 分片的请求可能是无界的连续流（典型是 udpxy 代理后的组播），
+            // 写进磁盘缓存只会变成持续写入 + 持续淘汰，白白拖垮盒子的闪存。
+            if (bypassCache || !isTsRequest) {
                 if (isTsRequest) {
                     recordPlaybackCacheRequest(cacheKey, false, true);
                 }

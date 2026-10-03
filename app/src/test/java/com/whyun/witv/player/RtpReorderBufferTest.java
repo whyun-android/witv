@@ -190,6 +190,49 @@ public class RtpReorderBufferTest {
         assertEquals(Arrays.asList(5), drainMarkers());
     }
 
+    /**
+     * 发送端重启会把序号重置到更小的值。若新起点落在当前期望值「之前」的半个序号空间里，
+     * 每个新包都会被判为迟到，最坏要丢 32767 个包（760pkt/s 下约 43 秒黑屏）才会自然追上。
+     * 连续迟到足够多次就必须按新起点重新同步。
+     */
+    @Test
+    public void resyncsWhenSenderRestartsWithLowerSequence() {
+        offer(50_000, 1);
+        assertEquals(Arrays.asList(1), drainMarkers());
+
+        // 发送端重启，新序号在旧期望值之前 10000 个
+        int newStart = 40_000;
+        for (int i = 0; i < 63; i++) {
+            offer(newStart + i, 100 + i);
+        }
+        // 阈值之前：全部按迟到丢弃，一个都吐不出来
+        assertEquals(Arrays.asList(), drainMarkers());
+        assertTrue(buffer.getLatePackets() >= 63);
+
+        // 第 64 个触发重同步
+        offer(newStart + 63, 163);
+        assertEquals(Arrays.asList(163), drainMarkers());
+
+        // 之后恢复正常按序工作
+        offer(newStart + 64, 164);
+        assertEquals(Arrays.asList(164), drainMarkers());
+        assertTrue(buffer.getDiscontinuities() >= 1);
+    }
+
+    /** 零星的迟到包（正常网络抖动）不能触发重同步。 */
+    @Test
+    public void occasionalLatePacketsDoNotTriggerResync() {
+        offer(1000, 1);
+        drainMarkers();
+
+        for (int i = 0; i < 10; i++) {
+            offer(900 + i, 50 + i);          // 迟到
+            offer(1001 + i, 100 + i);        // 正常，重置连续计数
+            assertEquals(Arrays.asList(100 + i), drainMarkers());
+        }
+        assertEquals(0, buffer.getDiscontinuities());
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsNonPowerOfTwoCapacity() {
         new RtpReorderBuffer(6, MAX_PAYLOAD);
