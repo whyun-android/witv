@@ -158,7 +158,8 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
 
     public static final class CheckRow extends Row {
         enum Kind {
-            AUTO_PLAY, REFRESH_M3U_ON_STARTUP, USE_DISK_CACHE_FOR_LIVE_TS, LOAD_SPEED, REVERSE_CHANNEL_KEYS
+            AUTO_PLAY, REFRESH_M3U_ON_STARTUP, USE_DISK_CACHE_FOR_LIVE_TS, LOAD_SPEED, REVERSE_CHANNEL_KEYS,
+            USE_AS_LAUNCHER
         }
 
         final Kind kind;
@@ -229,6 +230,8 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         void onLoadSpeed(boolean checked);
 
         void onReverseChannelKeys(boolean checked);
+
+        void onUseAsLauncher(boolean checked);
 
         void onHelpSubmenuClick(HelpSubRow.Kind kind);
 
@@ -561,6 +564,9 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
                         break;
                     case REVERSE_CHANNEL_KEYS:
                         listener.onReverseChannelKeys(isChecked);
+                        break;
+                    case USE_AS_LAUNCHER:
+                        listener.onUseAsLauncher(isChecked);
                         break;
                 }
             });

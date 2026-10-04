@@ -66,6 +66,16 @@
     <string name="exit_dialog_title">退出应用</string>
     <string name="exit_dialog_message">要先去设置，还是休息一下？</string>
     <string name="exit_dialog_rest">休息一下</string>
+    <string name="exit_dialog_switch_app">切换应用</string>
+    <string name="use_as_launcher">作为桌面启动</string>
+    <string name="use_as_launcher_hint">开启后按 Home 键或开机直接进入 WiTV；需在弹出的列表中选择 WiTV 并设为「始终」。返回键 → 切换应用 可打开其他桌面与应用，关闭此项即恢复原桌面</string>
+    <string name="use_as_launcher_enabled_toast">请在弹出的列表中选择 WiTV，并设为「始终」</string>
+    <string name="use_as_launcher_disabled_toast">已关闭作为桌面启动</string>
+    <string name="app_switcher_title">切换应用</string>
+    <string name="app_switcher_change_default">更改默认桌面…</string>
+    <string name="app_switcher_other_homes">其他桌面</string>
+    <string name="app_switcher_all_apps">全部应用</string>
+    <string name="app_switcher_launch_failed">无法打开该应用</string>
     <string name="auto_play_last">启动播放上次频道</string>
     <string name="refresh_m3u_on_startup">启动时刷新 M3U 直播源</string>
     <string name="refresh_m3u_on_startup_hint">开启后进入播放页时先刷新当前激活的 M3U 订阅，再使用最新频道列表起播；刷新失败时仍回退到本地缓存</string>

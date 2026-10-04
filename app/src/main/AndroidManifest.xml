@@ -17,6 +17,22 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
+    <!-- targetSdk 30+ 的包可见性：应用切换面板需要列出桌面与可启动应用，见 LauncherHelper -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".WiTVApp"
         android:allowBackup="true"
@@ -33,6 +49,7 @@
             android:name=".ui.PlayerActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout"
             android:exported="true"
+            android:launchMode="singleTask"
             android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -43,6 +60,38 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          作为桌面启动：默认关闭，由设置里的「作为桌面启动」通过 LauncherHelper 开关。
+          关闭时系统看不到 WiTV 的 HOME 能力，按 Home 键不会出现在候选里。
+        -->
+        <activity-alias
+            android:name=".ui.HomeAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:targetActivity=".ui.PlayerActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
+          仅用于让系统丢弃已保存的默认桌面：短暂启用后系统发现 HOME 候选集合变了，
+          下次按 Home 会重新弹出选择框。见 LauncherHelper#requestChooseDefaultHome。
+        -->
+        <activity-alias
+            android:name=".ui.HomeChooserResetAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:targetActivity=".ui.PlayerActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
 
         <activity
             android:name=".ui.SettingsActivity"

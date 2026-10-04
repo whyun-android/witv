@@ -1,6 +1,7 @@
 package com.whyun.witv.ui;
 
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.graphics.Bitmap;
@@ -118,6 +119,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private boolean overlayVisible = false;
     private final Runnable hideOverlayRunnable = () -> hideOverlay();
     private AlertDialog exitDialog;
+    private AlertDialog appSwitcherDialog;
 
     private static final long CHANNEL_LIST_HIDE_IDLE_MS = 10_000L;
     private final Runnable hideChannelListIdleRunnable = () -> {
@@ -1414,7 +1416,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 .setTitle(R.string.exit_dialog_title)
                 .setMessage(R.string.exit_dialog_message)
                 .setNegativeButton(R.string.settings, (dialog, which) -> showSettingsPanel())
-                .setPositiveButton(R.string.exit_dialog_rest, (dialog, which) -> finish())
+                .setNeutralButton(R.string.exit_dialog_switch_app, (dialog, which) -> showAppSwitcher())
+                .setPositiveButton(R.string.exit_dialog_rest, (dialog, which) -> rest())
                 .create();
         exitDialog.setOnDismissListener(dialog -> exitDialog = null);
         exitDialog.show();
@@ -1422,6 +1425,49 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (restButton != null) {
             restButton.post(restButton::requestFocus);
         }
+    }
+
+    /**
+     * 作为默认桌面时不能 finish：系统会立刻重新拉起桌面，看起来就是「退不出去」。
+     * 改为把任务退到后台，回到上一个应用（没有的话保持原样）。
+     */
+    private void rest() {
+        if (LauncherHelper.isDefaultHome(this)) {
+            moveTaskToBack(true);
+        } else {
+            finish();
+        }
+    }
+
+    private void showAppSwitcher() {
+        if (isFinishing()) {
+            return;
+        }
+        if (appSwitcherDialog != null && appSwitcherDialog.isShowing()) {
+            return;
+        }
+        appSwitcherDialog = AppSwitcherDialog.show(this);
+        appSwitcherDialog.setOnDismissListener(dialog -> appSwitcherDialog = null);
+    }
+
+    /**
+     * singleTask：作为桌面时每次按 Home 都会走到这里。只收起面板和弹窗回到全屏播放，
+     * 不重新加载频道，避免打断正在播的节目。
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (exitDialog != null && exitDialog.isShowing()) {
+            exitDialog.dismiss();
+        }
+        if (appSwitcherDialog != null && appSwitcherDialog.isShowing()) {
+            appSwitcherDialog.dismiss();
+        }
+        if (isSettingsPanelVisible()) {
+            hideSettingsPanel();
+        }
+        hideOverlay();
     }
 
     // PlayerManager.Callback implementations
