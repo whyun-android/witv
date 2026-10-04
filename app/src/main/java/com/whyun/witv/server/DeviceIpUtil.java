@@ -23,7 +23,7 @@ import java.util.List;
  * 解析本机用于展示的局域网地址，也就是用户要在浏览器里输入的那个 IP。
  *
  * <p>原先只读 {@code WifiManager.getConnectionInfo().getIpAddress()}，而电视盒子接网线是常态，
- * 有线连接时该接口恒返回 0，界面上就只剩 {@code 0.0.0.0:9978} 这种没法用的地址。
+ * 有线连接时该接口恒返回 0，界面上就只剩 {@code 0.0.0.0:9979} 这种没法用的地址。
  */
 public final class DeviceIpUtil {
 

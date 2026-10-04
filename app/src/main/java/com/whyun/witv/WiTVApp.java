@@ -113,7 +113,7 @@ public class WiTVApp extends Application {
 
     private void startWebServer() {
         try {
-            webServer = new WebServer(this, 9978);
+            webServer = new WebServer(this, WebServer.PORT);
             webServer.start();
         } catch (Exception e) {
             e.printStackTrace();

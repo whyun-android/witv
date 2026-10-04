@@ -11,7 +11,7 @@ public class DeviceIpUtilTest {
 
     /**
      * 这个工具存在的直接原因：盒子接网线时，原来只读 WifiManager 的实现拿不到地址，
-     * 界面上显示成 0.0.0.0:9978，用户无法访问 Web 管理页。
+     * 界面上显示成 0.0.0.0:9979，用户无法访问 Web 管理页。
      */
     @Test
     public void picksEthernetAddress() {

@@ -27,6 +27,12 @@ import fi.iki.elonen.NanoHTTPD;
 
 public class WebServer extends NanoHTTPD {
 
+    /**
+     * 局域网管理页端口。此前这个数字散落在 Application、播放页、设置页三处硬编码，
+     * 改端口要同时改三处且很容易漏，统一收敛到这里。
+     */
+    public static final int PORT = 9979;
+
     private final Context context;
     private final AppDatabase db;
     private final Gson gson = new Gson();
@@ -42,6 +48,11 @@ public class WebServer extends NanoHTTPD {
         MIME_MAP.put("png", "image/png");
         MIME_MAP.put("svg", "image/svg+xml");
         MIME_MAP.put("ico", "image/x-icon");
+    }
+
+    /** 拼出用户要在浏览器里输入的完整地址。 */
+    public static String buildUrl(String host) {
+        return "http://" + host + ":" + PORT;
     }
 
     public WebServer(Context context, int port) {

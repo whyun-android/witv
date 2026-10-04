@@ -29,6 +29,7 @@ import com.whyun.witv.R;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.player.PlaybackDecoderMode;
 import com.whyun.witv.server.DeviceIpUtil;
+import com.whyun.witv.server.WebServer;
 
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary;
 import com.whyun.witv.data.db.AppDatabase;
@@ -523,7 +524,8 @@ public class SettingsCollapsibleFragment extends Fragment
         Context ctx = requireContext();
         switch (category) {
             case CAT_ADDRESS:
-                rows.add(new SettingsPanelAdapter.WebHintRow(buildWebHint(ctx)));
+                rows.add(new SettingsPanelAdapter.WebHintRow(
+                        buildWebHint(ctx), buildWebUrl(ctx)));
                 for (M3USource s : m3uCache) {
                     rows.add(new SettingsPanelAdapter.M3USourceRow(s));
                 }
@@ -614,7 +616,11 @@ public class SettingsCollapsibleFragment extends Fragment
     }
 
     private static String buildWebHint(Context ctx) {
-        return String.format(Locale.US, "通过浏览器管理：http://%s:9978", getDeviceIp(ctx));
+        return String.format(Locale.US, "通过浏览器管理：%s", buildWebUrl(ctx));
+    }
+
+    private static String buildWebUrl(Context ctx) {
+        return WebServer.buildUrl(getDeviceIp(ctx));
     }
 
     private static String getDeviceIp(Context context) {

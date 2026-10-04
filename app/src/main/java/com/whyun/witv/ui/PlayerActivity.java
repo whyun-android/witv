@@ -3,6 +3,7 @@ package com.whyun.witv.ui;
 import android.app.AlertDialog;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
@@ -38,6 +39,8 @@ import com.whyun.witv.WiTVApp;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.server.DeviceIpUtil;
+import com.whyun.witv.server.QrCodeUtil;
+import com.whyun.witv.server.WebServer;
 import com.whyun.witv.data.db.entity.Channel;
 import com.whyun.witv.data.db.entity.ChannelSource;
 import com.whyun.witv.data.db.entity.EpgProgram;
@@ -75,6 +78,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private TextView channelNameView;
     private TextView sourceInfoView;
     private TextView webAddressView;
+    private ImageView webAddressQrView;
     private ImageView channelLogoView;
     private ImageView favoriteIcon;
     private TextView currentProgramView;
@@ -192,6 +196,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         channelNameView = findViewById(R.id.channel_name);
         sourceInfoView = findViewById(R.id.source_info);
         webAddressView = findViewById(R.id.tv_web_address);
+        webAddressQrView = findViewById(R.id.iv_web_address_qr);
         channelLogoView = findViewById(R.id.channel_logo);
         favoriteIcon = findViewById(R.id.favorite_icon);
         currentProgramView = findViewById(R.id.current_program);
@@ -493,7 +498,29 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (webAddressView == null) {
             return;
         }
-        webAddressView.setText(String.format(Locale.getDefault(), "http://%s:9978", getDeviceIp()));
+        String url = WebServer.buildUrl(getDeviceIp());
+        webAddressView.setText(url);
+        updateWebAddressQr(url);
+    }
+
+    /** 电视上用遥控器输 URL 很痛苦，给手机留个扫码入口。 */
+    private void updateWebAddressQr(String url) {
+        if (webAddressQrView == null) {
+            return;
+        }
+        // 按实际显示尺寸生成，缩放会让模块边缘发虚、影响扫码成功率
+        int sizePx = webAddressQrView.getWidth() - webAddressQrView.getPaddingLeft()
+                - webAddressQrView.getPaddingRight();
+        if (sizePx <= 0) {
+            sizePx = getResources().getDimensionPixelSize(R.dimen.web_address_qr_size);
+        }
+        Bitmap qr = QrCodeUtil.encode(url, sizePx);
+        if (qr == null) {
+            webAddressQrView.setVisibility(View.GONE);
+            return;
+        }
+        webAddressQrView.setImageBitmap(qr);
+        webAddressQrView.setVisibility(View.VISIBLE);
     }
 
     private String getDeviceIp() {

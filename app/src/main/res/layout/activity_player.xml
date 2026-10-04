@@ -243,6 +243,16 @@
             android:textColor="@color/text_secondary"
             android:textSize="18sp" />
 
+        <ImageView
+            android:id="@+id/iv_web_address_qr"
+            android:layout_width="220dp"
+            android:layout_height="220dp"
+            android:layout_marginTop="20dp"
+            android:background="@android:color/white"
+            android:contentDescription="@string/web_address_qr_desc"
+            android:padding="6dp"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/tv_web_address"
             android:layout_width="wrap_content"

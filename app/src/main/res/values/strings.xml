@@ -14,6 +14,8 @@
     <string name="settings_group_epg">EPG</string>
     <string name="settings_group_playback">播放选项</string>
     <string name="settings_group_source_timeout">超时换源</string>
+    <string name="web_address_qr_desc">Web 管理地址二维码</string>
+    <string name="web_address_qr_hint">手机扫码即可打开</string>
     <string name="settings_group_multicast">组播 / UDP</string>
     <string name="settings_group_decoder">解码方式</string>
     <string name="decoder_mode_auto">硬解优先（推荐）</string>
