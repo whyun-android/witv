@@ -1433,6 +1433,18 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         switchingToast.setVisibility(View.VISIBLE);
     }
 
+    /** 播放器被内部重建（解码器起不来时重建 Surface），把自己的监听器挂到新实例上。 */
+    @Override
+    public void onPlayerRebuilt() {
+        if (playerManager == null) {
+            return;
+        }
+        ExoPlayer rebuilt = playerManager.getPlayer();
+        if (rebuilt != null) {
+            rebuilt.addListener(mediaInfoListener);
+        }
+    }
+
     @Override
     public void onAllSourcesFailed() {
         switchingToast.setText(getString(R.string.all_sources_failed));
