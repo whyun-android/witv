@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-04
+
+本版把 v1.3.0 的组播能力真正跑通在电视盒子上：杜比频道没声音、切解码方式报错、
+4K 频道间换台后全部放不出来——三个都是在真机上定位并修掉的。
+另新增 Web 地址二维码与 gzip 节目单支持，并补上一份图文使用手册。
+单元测试总数增至 247 个。
+
 ### Added
 
 - **Web 管理地址二维码**：播放页与设置页各放一个，手机扫一下即可打开管理页，
@@ -221,6 +228,8 @@
 - `SettingsCollapsibleFragment`：切换播放线路后子菜单刷新，方向键右键无法回到主菜单
 
 [1.1.0]: https://github.com/whyun-android/witv/compare/v1.0.2...v1.1.0
+[1.4.0]: https://github.com/whyun-android/witv/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/whyun-android/witv/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/whyun-android/witv/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/whyun-android/witv/compare/v1.1.0...v1.2.0
 
