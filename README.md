@@ -4,12 +4,14 @@ Android TV M3U 直播播放器，使用原生 ExoPlayer 播放，支持多源自
 
 ![](docs/images/epg.png)
 
+完整的图文使用说明见 [docs/user-guide.md](docs/user-guide.md)。
+
 ## 功能
 
 - **M3U 播放源管理** — 支持添加多个 M3U/M3U8 播放源地址，在历史源之间快速切换
 - **多源自动切换** — 同一频道聚合多个播放地址，播放失败时自动尝试下一个源
 - **EPG 节目预告** — 自动读取 M3U 中的 `x-tvg-url` 属性，也支持手动配置 XMLTV 地址
-- **局域网 Web 管理** — 内置 HTTP 服务器（端口 9978），通过手机/电脑浏览器管理播放源和设置
+- **局域网 Web 管理** — 内置 HTTP 服务器（端口 9979），通过手机/电脑浏览器管理播放源和设置
 - **UDP / RTP 组播** — 支持 `udp://`、`rtp://` 组播频道（含 RTP 剥头与乱序重排）；也可配置 udpxy 代理把组播改写为 HTTP 单播，详见 [docs/multicast-udp-rtp.md](docs/multicast-udp-rtp.md)
 - **FFmpeg 软解兜底** — 内置 NextLib FFmpeg 解码器，补上盒子硬解常缺的 MPEG-2 视频与 MP2/AC3 音频；可在设置中切换硬解优先 / 软解优先 / 仅硬解
 - **遥控器适配** — 完整的 D-Pad 导航支持，数字键直接跳转频道
@@ -78,7 +80,7 @@ APK 输出路径：`app/build/outputs/apk/debug/app-debug.apk`
 ## 使用方式
 
 1. 安装 APK 到 Android TV 设备
-2. 启动应用，主界面会显示局域网管理地址（如 `http://192.168.1.100:9978`）
+2. 启动应用，主界面会显示局域网管理地址（如 `http://192.168.1.100:9979`）
 3. 在手机或电脑浏览器中打开该地址
 4. 添加 M3U 播放源地址
 5. 返回 TV 端即可看到频道列表，选择频道开始播放
