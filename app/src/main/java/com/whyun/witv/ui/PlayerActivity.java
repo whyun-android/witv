@@ -37,6 +37,7 @@ import com.whyun.witv.R;
 import com.whyun.witv.WiTVApp;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
+import com.whyun.witv.server.DeviceIpUtil;
 import com.whyun.witv.data.db.entity.Channel;
 import com.whyun.witv.data.db.entity.ChannelSource;
 import com.whyun.witv.data.db.entity.EpgProgram;
@@ -496,20 +497,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     private String getDeviceIp() {
-        try {
-            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-            if (wifiManager != null) {
-                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-                int ipInt = wifiInfo.getIpAddress();
-                if (ipInt != 0) {
-                    return String.format(Locale.US, "%d.%d.%d.%d",
-                            (ipInt & 0xff), (ipInt >> 8 & 0xff),
-                            (ipInt >> 16 & 0xff), (ipInt >> 24 & 0xff));
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return "0.0.0.0";
+        return DeviceIpUtil.resolve(this);
     }
 
     private Channel resolveInitialChannel(AppDatabase db) {

@@ -413,6 +413,12 @@ public class PlayerManager {
         }
         if (player != null) {
             player.removeListener(playerListener);
+            // 必须在 release 之前把播放器从 PlayerView 上摘下来。PlayerView.setPlayer() 会对
+            // 旧播放器调 clearVideoSurfaceView() 来解绑 Surface，而对已释放的播放器下发消息只会
+            // 被丢弃（"Ignoring messages sent after release"），Surface 就永远停在 connected 状态，
+            // 导致新建的 MediaCodec 连不上：native_window_api_connect returned an error (-22)，
+            // 继而 ERROR_CODE_DECODER_INIT_FAILED。
+            playerView.setPlayer(null);
             player.release();
             player = null;
         }
@@ -767,6 +773,11 @@ public class PlayerManager {
         }
         if (player != null) {
             player.removeListener(playerListener);
+            if (playerView != null) {
+                // 与 reinitializeForDecoderModeChange 同理：先解绑 Surface 再释放，
+                // 否则 Surface 会停在 connected 状态
+                playerView.setPlayer(null);
+            }
             player.release();
             player = null;
         }

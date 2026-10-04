@@ -14,6 +14,20 @@
   但改用原有的「软解优先」会连视频一起转软解，老盒子软解 1080p 跟不上实时又变成卡顿。
   新档位让音频走 FFmpeg 绕开直通、视频留在硬解，两边都成立
 
+### Fixed
+
+- **修复切换解码方式后播放失败**（`ERROR_CODE_DECODER_INIT_FAILED`）。重建播放器时先
+  `player.release()` 再由 `initialize()` 调 `playerView.setPlayer(newPlayer)`，而后者会对**旧**
+  播放器调 `clearVideoSurfaceView()` 去解绑 Surface——此时旧播放器已释放，消息被直接丢弃
+  （`Ignoring messages sent after release`），Surface 永远停在 connected 状态，新建的
+  MediaCodec 连不上：`native_window_api_connect returned an error (-22)`，两个解码器依次失败。
+  改为**先 `playerView.setPlayer(null)` 解绑、再 release**；`release()` 里同样处理。
+  该缺陷在 v1.3.0 中已存在
+- **修复 Web 管理地址显示为 `0.0.0.0:9978`**。原实现只读
+  `WifiManager.getConnectionInfo().getIpAddress()`，而电视盒子接网线是常态，有线连接时该接口恒返回 0。
+  新增 `DeviceIpUtil`：优先取系统认定的活动网络地址，取不到再枚举网卡，
+  有线优先于无线并排除 `p2p`/`dummy`/`tun` 等虚拟接口
+
 ### Changed
 
 - 解码方式由单一全局开关改为**音频与视频分别取值**（`WiTVRenderersFactory`）。

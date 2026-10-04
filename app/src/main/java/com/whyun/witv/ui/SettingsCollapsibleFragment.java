@@ -28,6 +28,7 @@ import com.whyun.witv.BuildConfig;
 import com.whyun.witv.R;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.player.PlaybackDecoderMode;
+import com.whyun.witv.server.DeviceIpUtil;
 
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary;
 import com.whyun.witv.data.db.AppDatabase;
@@ -617,21 +618,7 @@ public class SettingsCollapsibleFragment extends Fragment
     }
 
     private static String getDeviceIp(Context context) {
-        try {
-            WifiManager wifiManager = (WifiManager) context.getApplicationContext()
-                    .getSystemService(Context.WIFI_SERVICE);
-            if (wifiManager != null) {
-                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-                int ipInt = wifiInfo.getIpAddress();
-                if (ipInt != 0) {
-                    return String.format(Locale.US, "%d.%d.%d.%d",
-                            (ipInt & 0xff), (ipInt >> 8 & 0xff),
-                            (ipInt >> 16 & 0xff), (ipInt >> 24 & 0xff));
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return "0.0.0.0";
+        return DeviceIpUtil.resolve(context);
     }
 
     @Override
