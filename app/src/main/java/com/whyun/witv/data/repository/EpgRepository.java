@@ -2,6 +2,7 @@ package com.whyun.witv.data.repository;
 
 import android.content.Context;
 
+import com.whyun.witv.data.GzipAwareStreams;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.dao.EpgChannelDao;
 import com.whyun.witv.data.db.dao.EpgDao;
@@ -55,7 +56,10 @@ public class EpgRepository {
             if (!response.isSuccessful() || response.body() == null) {
                 throw new IOException("Failed to fetch EPG: " + response.code());
             }
-            try (InputStream inputStream = response.body().byteStream()) {
+            // 公开 EPG 源基本都提供 .xml.gz；这类响应是 Content-Type: application/gzip，
+            // 不带 Content-Encoding，OkHttp 不会自动解压，必须自己按魔数判断
+            try (InputStream inputStream =
+                         GzipAwareStreams.maybeDecompress(response.body().byteStream())) {
                 EpgParser.ParseResult result = new EpgParser().parseFull(inputStream);
 
                 epgDao.deleteAll();
