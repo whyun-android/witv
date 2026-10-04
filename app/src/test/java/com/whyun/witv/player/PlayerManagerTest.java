@@ -34,6 +34,21 @@ public class PlayerManagerTest {
     private TestCallback callback;
     private Context context;
 
+    /**
+     * 「解码器起不来」必须和「这路流坏了」分开：换源对前者没用——Surface 被上一个解码器
+     * 占着时，盒子上每一个频道都会一样失败，一路换到底只会把所有源都标记成坏的。
+     */
+    @Test
+    public void tellsDecoderInitFailureApartFromStreamErrors() {
+        assertTrue(PlayerManager.isDecoderInitFailure(new PlaybackException(
+                "Decoder init failed", null, PlaybackException.ERROR_CODE_DECODER_INIT_FAILED)));
+        assertFalse(PlayerManager.isDecoderInitFailure(new PlaybackException(
+                "Network", null, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)));
+        assertFalse(PlayerManager.isDecoderInitFailure(new PlaybackException(
+                "Decoding failed", null, PlaybackException.ERROR_CODE_DECODING_FAILED)));
+        assertFalse(PlayerManager.isDecoderInitFailure(null));
+    }
+
     static class TestCallback implements PlayerManager.Callback {
         int sourceSwitchingCount = 0;
         int lastSwitchIndex = -1;
@@ -43,6 +58,7 @@ public class PlayerManagerTest {
         int playbackStartedCount = 0;
         int lastPlaybackSourceIndex = -1;
         String lastError = null;
+        int playerRebuiltCount = 0;
 
         @Override
         public void onSourceSwitching(int newIndex, int total) {
@@ -55,6 +71,11 @@ public class PlayerManagerTest {
         public void onAllSourcesFailed() {
             allSourcesFailed = true;
             allSourcesFailedCount++;
+        }
+
+        @Override
+        public void onPlayerRebuilt() {
+            playerRebuiltCount++;
         }
 
         @Override

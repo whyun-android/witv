@@ -2,6 +2,8 @@ package com.whyun.witv.data.repository;
 
 import android.content.Context;
 
+import com.whyun.witv.data.BomAwareText;
+import com.whyun.witv.data.GzipAwareStreams;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.data.db.dao.ChannelDao;
 import com.whyun.witv.data.db.dao.ChannelSourceDao;
@@ -13,6 +15,8 @@ import com.whyun.witv.data.db.entity.FavoriteChannel;
 import com.whyun.witv.data.db.entity.M3USource;
 import com.whyun.witv.data.parser.M3UParser;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -22,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -56,6 +61,16 @@ public class ChannelRepository {
      * @return The parse result
      * @throws IOException if network request fails
      */
+    private static byte[] readFully(InputStream inputStream) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = inputStream.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+        }
+        return out.toByteArray();
+    }
+
     public M3UParser.ParseResult loadSource(M3USource source) throws IOException {
         Request request = new Request.Builder()
                 .url(source.url)
@@ -65,7 +80,17 @@ public class ChannelRepository {
             if (!response.isSuccessful() || response.body() == null) {
                 throw new IOException("Failed to fetch M3U: " + response.code());
             }
-            String content = response.body().string();
+            // 同样支持 .m3u.gz：按魔数判断，不依赖 URL 后缀或 Content-Type
+            byte[] raw;
+            try (InputStream inputStream =
+                         GzipAwareStreams.maybeDecompress(response.body().byteStream())) {
+                raw = readFully(inputStream);
+            }
+            // 编码按「BOM > 响应声明 > UTF-8」判断，和原来 ResponseBody.string() 的行为一致。
+            // 国内直播源有不少是 GBK 的，硬编码 UTF-8 会让频道名整片变成乱码
+            MediaType contentType = response.body().contentType();
+            String content = BomAwareText.decode(
+                    raw, contentType != null ? contentType.charset() : null);
             M3UParser.ParseResult result = new M3UParser().parse(content);
 
             long sourceId = source.id;

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 空状态页 Web 管理地址二维码的边长，与 activity_player.xml 中的 ImageView 保持一致 -->
+    <dimen name="web_address_qr_size">220dp</dimen>
+    <!-- 设置面板里 Web 管理提示的二维码边长 -->
+    <dimen name="settings_web_qr_size">132dp</dimen>
+</resources>

@@ -7,12 +7,14 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 
+import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
+import androidx.annotation.VisibleForTesting;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
@@ -38,7 +40,6 @@ import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.entity.ChannelSource;
 
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary;
-import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,6 +55,14 @@ public class PlayerManager {
         void onAllSourcesFailed();
         void onPlaybackStarted(int sourceIndex, int total);
         void onError(String message);
+
+        /**
+         * 内部重建了 {@code ExoPlayer} 实例。
+         *
+         * <p>调用方自己加在旧播放器上的监听器会随之失效，必须在这里重新挂到
+         * {@link PlayerManager#getPlayer()} 返回的新实例上。
+         */
+        void onPlayerRebuilt();
     }
 
     /**
@@ -151,6 +160,26 @@ public class PlayerManager {
      */
     static final long STALL_RECOVERY_RESET_AFTER_MS = 30_000L;
 
+    /**
+     * 解码器初始化失败后，重建 Surface 再试几次。
+     *
+     * <p>一次就够：这个失败的根因是 Surface 还被上一个解码器占着
+     * （{@code native_window_api_connect returned an error: Invalid argument (-22)}），
+     * 重建 SurfaceView 能拆掉那条连接；如果拆完还失败，那就是真的解不了，继续重试没有意义。
+     */
+    static final int MAX_DECODER_SURFACE_RECOVERIES = 1;
+
+    /**
+     * 把 PlayerView 收起来到再放出来之间等多久，让 SurfaceView 真正走完
+     * {@code surfaceDestroyed} / {@code surfaceCreated}。
+     *
+     * <p>这两个回调是跟着 WindowManager 的事务走的，不是同步的，所以必须隔帧而不是连着调。
+     */
+    private static final long SURFACE_RECREATE_DELAY_MS = 200L;
+
+    /** 当前频道已经为解码器失败重建过几次 Surface */
+    private int decoderSurfaceRecoveries;
+
     private static String playbackStateName(int state) {
         switch (state) {
             case Player.STATE_IDLE:
@@ -202,6 +231,10 @@ public class PlayerManager {
                 player.prepare();
                 player.setPlayWhenReady(true);
                 startTimeout();
+                return;
+            }
+
+            if (isDecoderInitFailure(error) && recoverBySurfaceRecreation()) {
                 return;
             }
 
@@ -359,14 +392,14 @@ public class PlayerManager {
         PlaybackDecoderMode mode = preferenceManager.getPlaybackDecoderMode();
         activeDecoderMode = mode;
         Log.i(TAG, String.format(Locale.US,
-                "Decoder mode: %s (extensionRendererMode=%d), ffmpeg=%s",
-                mode.getId(), mode.getExtensionRendererMode(), ffmpegLibrarySummary()));
-        return new NextRenderersFactory(context)
-                .setExtensionRendererMode(mode.getExtensionRendererMode())
+                "Decoder mode: %s (audio=%d, video=%d), ffmpeg=%s",
+                mode.getId(), mode.getAudioExtensionRendererMode(),
+                mode.getVideoExtensionRendererMode(), ffmpegLibrarySummary()));
+        return new WiTVRenderersFactory(context, mode)
                 // 某个 MediaCodec 解码器 configure 失败时，依次尝试同一渲染器里的其它
                 // MediaCodec 解码器（例如 c2.android.avc.decoder 失败后试 c2.qti.avc.decoder）。
                 // 注意它**不会**退到 FFmpeg 渲染器——渲染器早在 supportsFormat 阶段就选定了；
-                // 硬解整体不可用时请用「软解优先」档。
+                // 硬解整体不可用时请改用软解相关档位。
                 .setEnableDecoderFallback(true);
     }
 
@@ -398,6 +431,117 @@ public class PlayerManager {
      *
      * @return 是否真的重建了（未初始化过则返回 false）
      */
+    /**
+     * 确保有可用的播放器实例，没有就就地补建。
+     *
+     * <p>{@link #recoverBySurfaceRecreation()} 重建 Surface 的那几百毫秒里 {@link #player}
+     * 是空的，而这期间用户完全可能换台——换台会走 {@code playChannel}，它 bump 掉
+     * {@code playGeneration} 之后，重建流程的延迟回调就会放弃，没人再把播放器建回来。
+     * 不在这里补建的话，{@code playCurrentSource} 会对着 null 调 {@code stop()} 直接崩。
+     */
+    private void ensurePlayerReady() {
+        if (player != null || playerView == null) {
+            return;
+        }
+        Log.i(TAG, "Player was released (surface rebuild in flight) — rebuilding it now");
+        playerView.setVisibility(View.VISIBLE);
+        initialize(playerView);
+        if (callback != null) {
+            callback.onPlayerRebuilt();
+        }
+    }
+
+    /**
+     * 这个错误是不是「解码器起不来」。
+     *
+     * <p>和「这路流本身坏了」要分开处理：换源对它没用——盒子上所有频道都会一样失败。
+     */
+    @VisibleForTesting
+    static boolean isDecoderInitFailure(@Nullable PlaybackException error) {
+        return error != null
+                && error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED;
+    }
+
+    /**
+     * 重建 SurfaceView 后原地重试当前这一路。
+     *
+     * <p>在 Amlogic 盒子上，4K 频道之间换台时常见这样一串：
+     * <pre>
+     * E MediaCodec: native_window_api_connect returned an error: Invalid argument (-22)
+     * W MediaCodecRenderer: Failed to initialize decoder: OMX.amlogic.hevc.decoder.awesome
+     * </pre>
+     * 上一个解码器（尤其 4K sideband 那种）释放是异步的，SurfaceView 的 BufferQueue 还停在
+     * 它配置的格式上没断开，新建的 MediaCodec 就连不上这块 Surface。一旦撞上，之后每一次
+     * {@code configure} 都会失败——换源没用，重建 ExoPlayer 也没用（PlayerView 复用的是
+     * 同一个 SurfaceView），实测只有重启进程才能恢复。
+     *
+     * <p>所以这里把 {@code PlayerView} 收起来再放出来，逼 SurfaceView 走一遍
+     * {@code surfaceDestroyed} / {@code surfaceCreated}，把那条残留连接连同 BufferQueue
+     * 一起拆掉，然后用新播放器重试。
+     *
+     * @return 是否已接管这次失败；false 表示预算用完了，交回常规的换源流程
+     */
+    private boolean recoverBySurfaceRecreation() {
+        if (playerView == null || currentSources.isEmpty()) {
+            return false;
+        }
+        if (decoderSurfaceRecoveries >= MAX_DECODER_SURFACE_RECOVERIES) {
+            Log.w(TAG, String.format(Locale.US,
+                    "Decoder init still failing after %d surface rebuild(s) — giving up on this source",
+                    decoderSurfaceRecoveries));
+            return false;
+        }
+        decoderSurfaceRecoveries++;
+        Log.w(TAG, String.format(Locale.US,
+                "Decoder init failed — rebuilding the surface and retrying in place (%d/%d)",
+                decoderSurfaceRecoveries, MAX_DECODER_SURFACE_RECOVERIES));
+
+        final PlayerView view = playerView;
+        final List<ChannelSource> sources = new ArrayList<>(currentSources);
+        final int index = currentSourceIndex;
+
+        cancelTimeout();
+        cancelRebufferWatchdog();
+        // 让旧播放器的残留回调失效，否则下面重建期间它还会往回调里灌错误
+        playGeneration++;
+        final int generation = playGeneration;
+
+        if (hlsSegmentPrefetcher != null) {
+            hlsSegmentPrefetcher.release();
+            hlsSegmentPrefetcher = null;
+        }
+        if (player != null) {
+            player.removeListener(playerListener);
+            view.setPlayer(null);
+            player.release();
+            player = null;
+        }
+        view.setVisibility(View.GONE);
+
+        handler.postDelayed(() -> {
+            if (generation != playGeneration) {
+                // 这期间用户已经换台了，那边会自己起播，这里不能再抢
+                view.setVisibility(View.VISIBLE);
+                return;
+            }
+            view.setVisibility(View.VISIBLE);
+            handler.postDelayed(() -> {
+                if (generation != playGeneration) {
+                    return;
+                }
+                initialize(view);
+                if (callback != null) {
+                    callback.onPlayerRebuilt();
+                }
+                currentSources = sources;
+                currentSourceIndex = Math.max(0, Math.min(index, sources.size() - 1));
+                isRetrying = false;
+                playCurrentSource();
+            }, SURFACE_RECREATE_DELAY_MS);
+        }, SURFACE_RECREATE_DELAY_MS);
+        return true;
+    }
+
     public boolean reinitializeForDecoderModeChange() {
         if (playerView == null) {
             return false;
@@ -414,6 +558,12 @@ public class PlayerManager {
         }
         if (player != null) {
             player.removeListener(playerListener);
+            // 必须在 release 之前把播放器从 PlayerView 上摘下来。PlayerView.setPlayer() 会对
+            // 旧播放器调 clearVideoSurfaceView() 来解绑 Surface，而对已释放的播放器下发消息只会
+            // 被丢弃（"Ignoring messages sent after release"），Surface 就永远停在 connected 状态，
+            // 导致新建的 MediaCodec 连不上：native_window_api_connect returned an error (-22)，
+            // 继而 ERROR_CODE_DECODER_INIT_FAILED。
+            playerView.setPlayer(null);
             player.release();
             player = null;
         }
@@ -438,6 +588,7 @@ public class PlayerManager {
         cancelTimeout();
         cancelRebufferWatchdog();
         consecutiveStallRecoveries = 0;
+        decoderSurfaceRecoveries = 0;
         hasStartedPlayback = false;
         rebufferCount = 0;
         stopPlayer();
@@ -463,6 +614,13 @@ public class PlayerManager {
             }
             stopPlayer();
             Log.e(TAG, "All sources failed");
+            if (callback != null) callback.onAllSourcesFailed();
+            return;
+        }
+
+        ensurePlayerReady();
+        if (player == null) {
+            Log.w(TAG, "No player instance — cannot start playback");
             if (callback != null) callback.onAllSourcesFailed();
             return;
         }
@@ -768,6 +926,11 @@ public class PlayerManager {
         }
         if (player != null) {
             player.removeListener(playerListener);
+            if (playerView != null) {
+                // 与 reinitializeForDecoderModeChange 同理：先解绑 Surface 再释放，
+                // 否则 Surface 会停在 connected 状态
+                playerView.setPlayer(null);
+            }
             player.release();
             player = null;
         }

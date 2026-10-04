@@ -3,6 +3,7 @@ package com.whyun.witv.server;
 import android.content.Context;
 import android.content.res.AssetManager;
 
+import androidx.annotation.VisibleForTesting;
 import com.whyun.witv.WiTVApp;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
@@ -27,6 +28,12 @@ import fi.iki.elonen.NanoHTTPD;
 
 public class WebServer extends NanoHTTPD {
 
+    /**
+     * 局域网管理页端口。此前这个数字散落在 Application、播放页、设置页三处硬编码，
+     * 改端口要同时改三处且很容易漏，统一收敛到这里。
+     */
+    public static final int PORT = 9979;
+
     private final Context context;
     private final AppDatabase db;
     private final Gson gson = new Gson();
@@ -42,6 +49,11 @@ public class WebServer extends NanoHTTPD {
         MIME_MAP.put("png", "image/png");
         MIME_MAP.put("svg", "image/svg+xml");
         MIME_MAP.put("ico", "image/x-icon");
+    }
+
+    /** 拼出用户要在浏览器里输入的完整地址。 */
+    public static String buildUrl(String host) {
+        return "http://" + host + ":" + PORT;
     }
 
     public WebServer(Context context, int port) {
@@ -68,8 +80,9 @@ public class WebServer extends NanoHTTPD {
         } catch (Exception e) {
             JsonObject err = new JsonObject();
             err.addProperty("error", e.getMessage());
+            // 错误信息可能含中文（源地址解析失败等），必须带上 charset
             response = newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
-                    "application/json", gson.toJson(err));
+                    "application/json; charset=utf-8", gson.toJson(err));
         }
 
         response.addHeader("Access-Control-Allow-Origin", "*");
@@ -459,15 +472,71 @@ public class WebServer extends NanoHTTPD {
         return Long.parseLong(parts[parts.length - 1]);
     }
 
+    /**
+     * 按 UTF-8 读取请求体。
+     *
+     * <p>不能用 {@code session.parseBody()}：NanoHTTPD 内部是
+     * {@code new String(postBytes, contentType.getEncoding())}，而 {@code getEncoding()} 在
+     * Content-Type 不带 charset 时默认返回 <b>US-ASCII</b>，中文会被整体替换成 {@code ?}。
+     * 浏览器 {@code fetch} 发 {@code application/json} 时通常就不带 charset，
+     * 所以这里直接读原始字节自行解码，不依赖请求头。
+     */
     private String readBody(IHTTPSession session) throws IOException {
-        Map<String, String> body = new HashMap<>();
-        try {
-            session.parseBody(body);
-        } catch (ResponseException e) {
-            throw new IOException(e);
+        long contentLength = parseContentLength(session.getHeaders());
+        return readBodyFrom(session.getInputStream(), contentLength);
+    }
+
+    /**
+     * 请求体上限。这个服务只收播放源地址和设置项，最大的一条也就几百字节，
+     * 1 MiB 已经宽裕得离谱。
+     *
+     * <p>必须有上限：服务监听在局域网上且没有鉴权，任何能连上的设备发一个
+     * {@code Content-Length: 2000000000} 就能让下面按长度预分配数组，直接 OOM 杀掉整个应用。
+     */
+    @VisibleForTesting
+    static final int MAX_BODY_BYTES = 1024 * 1024;
+
+    private static long parseContentLength(Map<String, String> headers) {
+        if (headers == null) {
+            return 0L;
         }
-        String postData = body.get("postData");
-        return postData != null ? postData : "";
+        String value = headers.get("content-length");
+        if (value == null) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * 从流中精确读取 {@code contentLength} 个字节并按 UTF-8 解码。
+     *
+     * <p>必须读满而不是读一次就算：{@code InputStream.read} 允许返回少于请求的字节数，
+     * 中文请求体被截断同样会变成乱码。
+     */
+    @VisibleForTesting
+    static String readBodyFrom(InputStream inputStream, long contentLength) throws IOException {
+        if (inputStream == null || contentLength <= 0) {
+            return "";
+        }
+        // 先判断再分配：超限时一个字节都不能先占，否则这个检查就白写了
+        if (contentLength > MAX_BODY_BYTES) {
+            throw new IOException("Request body too large: " + contentLength);
+        }
+        int remaining = (int) contentLength;
+        byte[] body = new byte[remaining];
+        int offset = 0;
+        while (offset < remaining) {
+            int read = inputStream.read(body, offset, remaining - offset);
+            if (read < 0) {
+                break;
+            }
+            offset += read;
+        }
+        return new String(body, 0, offset, StandardCharsets.UTF_8);
     }
 
     private static boolean isBinaryAssetExt(String ext) {

@@ -71,6 +71,10 @@ dependencies {
     // NanoHTTPD
     implementation "org.nanohttpd:nanohttpd:2.3.1"
 
+    // 二维码生成（Web 管理地址扫码）。纯 Java、零运行时传递依赖，
+    // 已核对不含 java.time / stream / function，minSdk 23 无需 desugaring。
+    implementation "com.google.zxing:core:3.5.3"
+
     // OkHttp + Gson
     implementation "com.squareup.okhttp3:okhttp:4.12.0"
     implementation "com.google.code.gson:gson:2.10.1"

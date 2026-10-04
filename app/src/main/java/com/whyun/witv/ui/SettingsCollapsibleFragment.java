@@ -28,6 +28,8 @@ import com.whyun.witv.BuildConfig;
 import com.whyun.witv.R;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.player.PlaybackDecoderMode;
+import com.whyun.witv.server.DeviceIpUtil;
+import com.whyun.witv.server.WebServer;
 
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary;
 import com.whyun.witv.data.db.AppDatabase;
@@ -522,7 +524,8 @@ public class SettingsCollapsibleFragment extends Fragment
         Context ctx = requireContext();
         switch (category) {
             case CAT_ADDRESS:
-                rows.add(new SettingsPanelAdapter.WebHintRow(buildWebHint(ctx)));
+                rows.add(new SettingsPanelAdapter.WebHintRow(
+                        buildWebHint(ctx), buildWebQrUrl(ctx)));
                 for (M3USource s : m3uCache) {
                     rows.add(new SettingsPanelAdapter.M3USourceRow(s));
                 }
@@ -613,25 +616,27 @@ public class SettingsCollapsibleFragment extends Fragment
     }
 
     private static String buildWebHint(Context ctx) {
-        return String.format(Locale.US, "通过浏览器管理：http://%s:9978", getDeviceIp(ctx));
+        return String.format(Locale.US, "通过浏览器管理：%s", buildWebUrl(ctx));
+    }
+
+    private static String buildWebUrl(Context ctx) {
+        return WebServer.buildUrl(getDeviceIp(ctx));
+    }
+
+    /**
+     * 二维码要编的地址；IP 还没解析出来时返回 {@code null}，由 ViewHolder 隐藏二维码。
+     *
+     * <p>不能照样编一个 {@code http://0.0.0.0:9979} 出来——扫出来是个手机连不上的地址，
+     * 比干脆不显示更误导人。文字那行仍然照常显示，用户至少能看出是地址没拿到。
+     */
+    @Nullable
+    private static String buildWebQrUrl(Context ctx) {
+        String ip = getDeviceIp(ctx);
+        return DeviceIpUtil.isResolved(ip) ? WebServer.buildUrl(ip) : null;
     }
 
     private static String getDeviceIp(Context context) {
-        try {
-            WifiManager wifiManager = (WifiManager) context.getApplicationContext()
-                    .getSystemService(Context.WIFI_SERVICE);
-            if (wifiManager != null) {
-                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-                int ipInt = wifiInfo.getIpAddress();
-                if (ipInt != 0) {
-                    return String.format(Locale.US, "%d.%d.%d.%d",
-                            (ipInt & 0xff), (ipInt >> 8 & 0xff),
-                            (ipInt >> 16 & 0xff), (ipInt >> 24 & 0xff));
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return "0.0.0.0";
+        return DeviceIpUtil.resolve(context);
     }
 
     @Override
@@ -827,6 +832,8 @@ public class SettingsCollapsibleFragment extends Fragment
 
     private static int decoderModeTitleRes(PlaybackDecoderMode mode) {
         switch (mode) {
+            case SOFTWARE_AUDIO:
+                return R.string.decoder_mode_software_audio;
             case PREFER_SOFTWARE:
                 return R.string.decoder_mode_prefer_software;
             case HARDWARE_ONLY:
@@ -839,6 +846,8 @@ public class SettingsCollapsibleFragment extends Fragment
 
     private static int decoderModeDescriptionRes(PlaybackDecoderMode mode) {
         switch (mode) {
+            case SOFTWARE_AUDIO:
+                return R.string.decoder_mode_software_audio_desc;
             case PREFER_SOFTWARE:
                 return R.string.decoder_mode_prefer_software_desc;
             case HARDWARE_ONLY:

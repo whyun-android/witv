@@ -3,6 +3,7 @@ package com.whyun.witv.ui;
 import android.app.AlertDialog;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
@@ -22,6 +23,7 @@ import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 
+import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 import androidx.media3.common.Player;
@@ -37,6 +39,9 @@ import com.whyun.witv.R;
 import com.whyun.witv.WiTVApp;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
+import com.whyun.witv.server.DeviceIpUtil;
+import com.whyun.witv.server.QrCodeUtil;
+import com.whyun.witv.server.WebServer;
 import com.whyun.witv.data.db.entity.Channel;
 import com.whyun.witv.data.db.entity.ChannelSource;
 import com.whyun.witv.data.db.entity.EpgProgram;
@@ -74,6 +79,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private TextView channelNameView;
     private TextView sourceInfoView;
     private TextView webAddressView;
+    private ImageView webAddressQrView;
     private ImageView channelLogoView;
     private ImageView favoriteIcon;
     private TextView currentProgramView;
@@ -191,6 +197,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         channelNameView = findViewById(R.id.channel_name);
         sourceInfoView = findViewById(R.id.source_info);
         webAddressView = findViewById(R.id.tv_web_address);
+        webAddressQrView = findViewById(R.id.iv_web_address_qr);
         channelLogoView = findViewById(R.id.channel_logo);
         favoriteIcon = findViewById(R.id.favorite_icon);
         currentProgramView = findViewById(R.id.current_program);
@@ -492,24 +499,36 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (webAddressView == null) {
             return;
         }
-        webAddressView.setText(String.format(Locale.getDefault(), "http://%s:9978", getDeviceIp()));
+        String ip = getDeviceIp();
+        String url = WebServer.buildUrl(ip);
+        webAddressView.setText(url);
+        // IP 没解析出来时地址文字照常显示（用户据此知道要查网络），但不给二维码：
+        // 把 0.0.0.0 编成码，扫出来是个连不上的地址，比不给码更误导人
+        updateWebAddressQr(DeviceIpUtil.isResolved(ip) ? url : null);
+    }
+
+    /** 电视上用遥控器输 URL 很痛苦，给手机留个扫码入口。 */
+    private void updateWebAddressQr(@Nullable String url) {
+        if (webAddressQrView == null) {
+            return;
+        }
+        // 按实际显示尺寸生成，缩放会让模块边缘发虚、影响扫码成功率
+        int sizePx = webAddressQrView.getWidth() - webAddressQrView.getPaddingLeft()
+                - webAddressQrView.getPaddingRight();
+        if (sizePx <= 0) {
+            sizePx = getResources().getDimensionPixelSize(R.dimen.web_address_qr_size);
+        }
+        Bitmap qr = QrCodeUtil.encode(url, sizePx);
+        if (qr == null) {
+            webAddressQrView.setVisibility(View.GONE);
+            return;
+        }
+        webAddressQrView.setImageBitmap(qr);
+        webAddressQrView.setVisibility(View.VISIBLE);
     }
 
     private String getDeviceIp() {
-        try {
-            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-            if (wifiManager != null) {
-                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-                int ipInt = wifiInfo.getIpAddress();
-                if (ipInt != 0) {
-                    return String.format(Locale.US, "%d.%d.%d.%d",
-                            (ipInt & 0xff), (ipInt >> 8 & 0xff),
-                            (ipInt >> 16 & 0xff), (ipInt >> 24 & 0xff));
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return "0.0.0.0";
+        return DeviceIpUtil.resolve(this);
     }
 
     private Channel resolveInitialChannel(AppDatabase db) {
@@ -1412,6 +1431,18 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         switchingToast.setText(String.format(Locale.getDefault(),
                 "%s (%d/%d)", getString(R.string.switching_source), newIndex + 1, total));
         switchingToast.setVisibility(View.VISIBLE);
+    }
+
+    /** 播放器被内部重建（解码器起不来时重建 Surface），把自己的监听器挂到新实例上。 */
+    @Override
+    public void onPlayerRebuilt() {
+        if (playerManager == null) {
+            return;
+        }
+        ExoPlayer rebuilt = playerManager.getPlayer();
+        if (rebuilt != null) {
+            rebuilt.addListener(mediaInfoListener);
+        }
     }
 
     @Override

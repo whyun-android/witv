@@ -1,5 +1,6 @@
 package com.whyun.witv.ui;
 
+import android.graphics.Bitmap;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -7,9 +8,11 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.whyun.witv.R;
@@ -17,6 +20,7 @@ import com.whyun.witv.data.db.entity.ChannelSource;
 import com.whyun.witv.data.db.entity.M3USource;
 import com.whyun.witv.player.MulticastUrlUtil;
 import com.whyun.witv.player.PlaybackDecoderMode;
+import com.whyun.witv.server.QrCodeUtil;
 
 import java.util.Collections;
 import java.util.List;
@@ -44,9 +48,13 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
 
     public static final class WebHintRow extends Row {
         final String text;
+        /** 纯 URL，用于生成二维码；与 {@link #text} 里那句说明文字分开。IP 还没解析出来时为 {@code null} */
+        @Nullable
+        final String url;
 
-        public WebHintRow(String text) {
+        public WebHintRow(String text, @Nullable String url) {
             this.text = text;
+            this.url = url;
         }
 
         @Override
@@ -255,6 +263,8 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         LayoutInflater inf = LayoutInflater.from(parent.getContext());
         switch (viewType) {
             case VT_WEB_HINT:
+                return new WebHintVH(
+                        inf.inflate(R.layout.item_settings_web_hint, parent, false));
             case VT_EMPTY_HINT:
                 return new HintVH(inf.inflate(R.layout.item_settings_hint, parent, false));
             case VT_M3U:
@@ -280,14 +290,10 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
     @Override
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
         Row row = rows.get(position);
-        if (holder instanceof HintVH) {
-            String text;
-            if (row instanceof WebHintRow) {
-                text = ((WebHintRow) row).text;
-            } else {
-                text = ((EmptyHintRow) row).text;
-            }
-            ((HintVH) holder).bind(text);
+        if (holder instanceof WebHintVH) {
+            ((WebHintVH) holder).bind((WebHintRow) row);
+        } else if (holder instanceof HintVH) {
+            ((HintVH) holder).bind(((EmptyHintRow) row).text);
         } else if (holder instanceof M3UVH) {
             ((M3UVH) holder).bind(((M3USourceRow) row).source, listener);
         } else if (holder instanceof StreamVH) {
@@ -312,6 +318,38 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
     @Override
     public int getItemCount() {
         return rows.size();
+    }
+
+    /** Web 管理提示：地址上方带一个二维码，省去在电视上用遥控器输 URL。 */
+    static final class WebHintVH extends RecyclerView.ViewHolder {
+        final ImageView qr;
+        final TextView qrCaption;
+        final TextView text;
+
+        WebHintVH(@NonNull View itemView) {
+            super(itemView);
+            qr = itemView.findViewById(R.id.web_hint_qr);
+            qrCaption = itemView.findViewById(R.id.web_hint_qr_caption);
+            text = itemView.findViewById(R.id.hint_text);
+        }
+
+        void bind(WebHintRow row) {
+            text.setText(row.text);
+            // 减掉 padding：ImageView 是 132dp，但四周各留了 4dp 白边，真正画码的只有中间那块。
+            // 按 132dp 生成再塞进 124dp 会被非整数倍重采样，模块边缘发虚，本来就小的码更难扫
+            int sizePx = itemView.getResources()
+                    .getDimensionPixelSize(R.dimen.settings_web_qr_size)
+                    - qr.getPaddingLeft() - qr.getPaddingRight();
+            Bitmap bitmap = QrCodeUtil.encode(row.url, sizePx);
+            if (bitmap == null) {
+                qr.setVisibility(View.GONE);
+                qrCaption.setVisibility(View.GONE);
+                return;
+            }
+            qr.setImageBitmap(bitmap);
+            qr.setVisibility(View.VISIBLE);
+            qrCaption.setVisibility(View.VISIBLE);
+        }
     }
 
     static final class HintVH extends RecyclerView.ViewHolder {
