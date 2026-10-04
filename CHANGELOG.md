@@ -8,6 +8,18 @@
 
 ### Added
 
+- **Web 管理地址二维码**：播放页与设置页各放一个，手机扫一下即可打开管理页，
+  省去在电视上用遥控器逐字符输入 URL。固定黑白、留 2 个模块的静区——
+  这是贴在深色背景上的小图，没有白边很多手机扫不出来。
+  IP 尚未解析出来时不画码：把 `0.0.0.0` 编进去，扫出来是个连不上的地址，比不给码更误导人
+- **EPG 与 M3U 支持 gzip 地址**（`GzipAwareStreams`）。公开 EPG 源基本只提供 `.xml.gz`——
+  XMLTV 节目单动辄几十 MB。这类地址返回的是 `Content-Type: application/gzip` 而非
+  `Content-Encoding: gzip`，OkHttp 的透明解压不生效，拿到的是裸 gzip 字节。
+  判断依据是**魔数** `0x1F 0x8B` 而不是 URL 后缀或 `Content-Type`：两者都不可靠，
+  而 XML 与 m3u 都不可能以这两个字节开头。`.m3u.gz` 同样支持
+- 新增图文使用手册 [`docs/user-guide.md`](docs/user-guide.md)，13 张真机截图，
+  覆盖首次添加播放源、看电视、各设置分类与 Web 管理页；
+  组播章节附上代理与直收的实测对比数据
 - **解码方式新增「音频软解 + 视频硬解」档**（`PlaybackDecoderMode.SOFTWARE_AUDIO`）。
   实测某些盒子声称支持 AC-3/E-AC-3 直通，`MediaCodecAudioRenderer` 便以直通方式胜出、
   压根不解码，而 HDMI 下游实际解不了，表现为**杜比声道完全没声音**；
@@ -16,6 +28,26 @@
 
 ### Fixed
 
+- **修复 4K 频道间换台后所有频道都放不出来**。症状是一串
+  `native_window_api_connect returned an error (-22)` + `Failed to initialize decoder`，
+  此后每一个频道都起不来。根因在 Surface 而不在流：上一个解码器（尤其 4K sideband 那种）
+  释放是异步的，`SurfaceView` 的 BufferQueue 还停在它配置的格式上没断开
+  （`dumpsys SurfaceFlinger` 里那块 buffer 仍是 3840x2160），新建的 MediaCodec 连不上。
+  实测换源、重建 `ExoPlayer`、前后台切换、静置均无效，只有重启进程能恢复——
+  因为 `PlayerView` 复用的是同一个 `SurfaceView`。
+  现在收到 `ERROR_CODE_DECODER_INIT_FAILED` 时不再当成「这路流坏了」去换源
+  （换源是错的，一路换到底只会把所有源都误判成坏的），
+  而是把 `PlayerView` 收起再放出，逼 `SurfaceView` 走一遍
+  `surfaceDestroyed` / `surfaceCreated`，然后用新播放器原地重试当前这一路，只重试一次
+- **修复 Web 管理页里的中文变成 `?`**。给播放源起中文名保存后全是问号：
+  NanoHTTPD 的 `session.parseBody()` 内部是 `new String(postBytes, contentType.getEncoding())`，
+  而 `getEncoding()` 在 `Content-Type` 不带 charset 时默认返回 **US-ASCII**，
+  浏览器 `fetch` 发 `application/json` 时正是不带的。改为自己按 `Content-Length`
+  读原始字节再按 UTF-8 解码，不依赖请求头；并加 1 MiB 上限——服务监听在局域网上且没有鉴权，
+  按 `Content-Length` 预分配可被一个超大值直接 OOM 掉
+- **修复开着 VPN 时 Web 地址显示隧道地址**。`getActiveNetwork()` 此时返回的就是 VPN，
+  而排除虚拟接口的逻辑在它后面、根本到不了。那个地址写到界面上局域网里的手机连不上，
+  而物理网卡的地址其实还可用。现在先按接口名过滤，虚拟接口一律退回枚举网卡
 - **修复切换解码方式后播放失败**（`ERROR_CODE_DECODER_INIT_FAILED`）。重建播放器时先
   `player.release()` 再由 `initialize()` 调 `playerView.setPlayer(newPlayer)`，而后者会对**旧**
   播放器调 `clearVideoSurfaceView()` 去解绑 Surface——此时旧播放器已释放，消息被直接丢弃
@@ -23,13 +55,15 @@
   MediaCodec 连不上：`native_window_api_connect returned an error (-22)`，两个解码器依次失败。
   改为**先 `playerView.setPlayer(null)` 解绑、再 release**；`release()` 里同样处理。
   该缺陷在 v1.3.0 中已存在
-- **修复 Web 管理地址显示为 `0.0.0.0:9978`**。原实现只读
+- **修复 Web 管理地址显示为 `0.0.0.0`**。原实现只读
   `WifiManager.getConnectionInfo().getIpAddress()`，而电视盒子接网线是常态，有线连接时该接口恒返回 0。
   新增 `DeviceIpUtil`：优先取系统认定的活动网络地址，取不到再枚举网卡，
   有线优先于无线并排除 `p2p`/`dummy`/`tun` 等虚拟接口
 
 ### Changed
 
+- **Web 管理端口由 9978 改为 9979**，并把这个数字收敛成 `WebServer.PORT` / `buildUrl()`——
+  它此前在 Application、播放页、设置页三处硬编码，改端口要同时改三处且很容易漏
 - 解码方式由单一全局开关改为**音频与视频分别取值**（`WiTVRenderersFactory`）。
   `DefaultRenderersFactory` 只有一个 `extensionRendererMode`，音视频共用，
   而这两者的最佳取舍常常相反；现在分别覆写 `buildAudioRenderers` 与 `buildVideoRenderers`
