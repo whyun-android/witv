@@ -486,6 +486,16 @@ public class WebServer extends NanoHTTPD {
         return readBodyFrom(session.getInputStream(), contentLength);
     }
 
+    /**
+     * 请求体上限。这个服务只收播放源地址和设置项，最大的一条也就几百字节，
+     * 1 MiB 已经宽裕得离谱。
+     *
+     * <p>必须有上限：服务监听在局域网上且没有鉴权，任何能连上的设备发一个
+     * {@code Content-Length: 2000000000} 就能让下面按长度预分配数组，直接 OOM 杀掉整个应用。
+     */
+    @VisibleForTesting
+    static final int MAX_BODY_BYTES = 1024 * 1024;
+
     private static long parseContentLength(Map<String, String> headers) {
         if (headers == null) {
             return 0L;
@@ -512,7 +522,11 @@ public class WebServer extends NanoHTTPD {
         if (inputStream == null || contentLength <= 0) {
             return "";
         }
-        int remaining = (int) Math.min(contentLength, Integer.MAX_VALUE);
+        // 先判断再分配：超限时一个字节都不能先占，否则这个检查就白写了
+        if (contentLength > MAX_BODY_BYTES) {
+            throw new IOException("Request body too large: " + contentLength);
+        }
+        int remaining = (int) contentLength;
         byte[] body = new byte[remaining];
         int offset = 0;
         while (offset < remaining) {

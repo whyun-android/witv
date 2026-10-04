@@ -525,7 +525,7 @@ public class SettingsCollapsibleFragment extends Fragment
         switch (category) {
             case CAT_ADDRESS:
                 rows.add(new SettingsPanelAdapter.WebHintRow(
-                        buildWebHint(ctx), buildWebUrl(ctx)));
+                        buildWebHint(ctx), buildWebQrUrl(ctx)));
                 for (M3USource s : m3uCache) {
                     rows.add(new SettingsPanelAdapter.M3USourceRow(s));
                 }
@@ -621,6 +621,18 @@ public class SettingsCollapsibleFragment extends Fragment
 
     private static String buildWebUrl(Context ctx) {
         return WebServer.buildUrl(getDeviceIp(ctx));
+    }
+
+    /**
+     * 二维码要编的地址；IP 还没解析出来时返回 {@code null}，由 ViewHolder 隐藏二维码。
+     *
+     * <p>不能照样编一个 {@code http://0.0.0.0:9979} 出来——扫出来是个手机连不上的地址，
+     * 比干脆不显示更误导人。文字那行仍然照常显示，用户至少能看出是地址没拿到。
+     */
+    @Nullable
+    private static String buildWebQrUrl(Context ctx) {
+        String ip = getDeviceIp(ctx);
+        return DeviceIpUtil.isResolved(ip) ? WebServer.buildUrl(ip) : null;
     }
 
     private static String getDeviceIp(Context context) {

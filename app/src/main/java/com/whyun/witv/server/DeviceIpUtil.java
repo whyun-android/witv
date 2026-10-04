@@ -47,6 +47,14 @@ public final class DeviceIpUtil {
         return pickDisplayAddress(enumerateCandidates());
     }
 
+    /**
+     * 地址是不是真解出来了。界面上要据此决定还能不能画二维码——
+     * 把 {@link #UNKNOWN_ADDRESS} 编成码，扫出来是个连不上的地址，比不给码更误导人。
+     */
+    public static boolean isResolved(@Nullable String address) {
+        return address != null && !UNKNOWN_ADDRESS.equals(address) && !address.trim().isEmpty();
+    }
+
     /** 系统认定的活动网络地址最准：有线/无线同时在线时它就是实际出口。 */
     @Nullable
     private static String fromActiveNetwork(@Nullable Context context) {
@@ -65,6 +73,12 @@ public final class DeviceIpUtil {
             }
             LinkProperties props = cm.getLinkProperties(active);
             if (props == null) {
+                return null;
+            }
+            // 开着 VPN 时活动网络就是 VPN，这里会拿到隧道地址（tun0）。那个地址写到界面上，
+            // 局域网里的手机根本连不上，而物理网卡的地址其实还好好的——所以虚拟接口一律跳过，
+            // 退回下面的网卡枚举。
+            if (!isUsableInterface(props.getInterfaceName())) {
                 return null;
             }
             for (LinkAddress linkAddress : props.getLinkAddresses()) {
@@ -132,6 +146,12 @@ public final class DeviceIpUtil {
         return best != null ? best.address : UNKNOWN_ADDRESS;
     }
 
+    /** 接口能不能作为别人访问本机的入口；{@code null} 视为可用（拿不到名字时不武断排除）。 */
+    @VisibleForTesting
+    static boolean isUsableInterface(@Nullable String interfaceName) {
+        return interfaceName == null || rankOf(interfaceName) != Integer.MAX_VALUE;
+    }
+
     /** 数值越小越优先；{@link Integer#MAX_VALUE} 表示不可用。 */
     private static int rankOf(@Nullable String interfaceName) {
         if (interfaceName == null) {
@@ -139,7 +159,8 @@ public final class DeviceIpUtil {
         }
         String name = interfaceName.toLowerCase(java.util.Locale.US);
         if (name.startsWith("lo") || name.startsWith("p2p") || name.startsWith("dummy")
-                || name.startsWith("tun") || name.startsWith("docker") || name.startsWith("veth")) {
+                || name.startsWith("tun") || name.startsWith("tap") || name.startsWith("ppp")
+                || name.startsWith("docker") || name.startsWith("veth")) {
             return Integer.MAX_VALUE;
         }
         if (name.startsWith("eth")) {

@@ -1,6 +1,8 @@
 package com.whyun.witv.server;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import org.junit.Test;
 
@@ -56,6 +58,27 @@ public class WebServerTest {
         assertEquals("", WebServer.readBodyFrom(null, 10));
         assertEquals("", WebServer.readBodyFrom(new ByteArrayInputStream(new byte[0]), 0));
         assertEquals("", WebServer.readBodyFrom(new ByteArrayInputStream(new byte[0]), -1));
+    }
+
+    /**
+     * 服务监听在局域网上且没有鉴权，任何能连上的设备发一个超大的 Content-Length，
+     * 按长度预分配就能把应用 OOM 掉。必须在分配之前拒掉。
+     */
+    @Test
+    public void rejectsOversizedBodyWithoutAllocating() {
+        try {
+            WebServer.readBodyFrom(new ByteArrayInputStream(new byte[0]), 2_000_000_000L);
+            fail("应当拒绝超大请求体");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("too large"));
+        }
+        // 正好卡在上限上要放过，不能把边界也拒了
+        try {
+            assertEquals("", WebServer.readBodyFrom(
+                    new ByteArrayInputStream(new byte[0]), WebServer.MAX_BODY_BYTES));
+        } catch (IOException e) {
+            throw new AssertionError("上限之内不应拒绝", e);
+        }
     }
 
     /** 每次 read 最多吐出固定字节数，模拟 socket 的分片到达。 */

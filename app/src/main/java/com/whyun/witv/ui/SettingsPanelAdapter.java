@@ -12,6 +12,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.whyun.witv.R;
@@ -47,10 +48,11 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
 
     public static final class WebHintRow extends Row {
         final String text;
-        /** 纯 URL，用于生成二维码；与 {@link #text} 里那句说明文字分开 */
+        /** 纯 URL，用于生成二维码；与 {@link #text} 里那句说明文字分开。IP 还没解析出来时为 {@code null} */
+        @Nullable
         final String url;
 
-        public WebHintRow(String text, String url) {
+        public WebHintRow(String text, @Nullable String url) {
             this.text = text;
             this.url = url;
         }
@@ -333,8 +335,11 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
 
         void bind(WebHintRow row) {
             text.setText(row.text);
+            // 减掉 padding：ImageView 是 132dp，但四周各留了 4dp 白边，真正画码的只有中间那块。
+            // 按 132dp 生成再塞进 124dp 会被非整数倍重采样，模块边缘发虚，本来就小的码更难扫
             int sizePx = itemView.getResources()
-                    .getDimensionPixelSize(R.dimen.settings_web_qr_size);
+                    .getDimensionPixelSize(R.dimen.settings_web_qr_size)
+                    - qr.getPaddingLeft() - qr.getPaddingRight();
             Bitmap bitmap = QrCodeUtil.encode(row.url, sizePx);
             if (bitmap == null) {
                 qr.setVisibility(View.GONE);

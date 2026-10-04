@@ -23,6 +23,7 @@ import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 
+import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 import androidx.media3.common.Player;
@@ -498,13 +499,16 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (webAddressView == null) {
             return;
         }
-        String url = WebServer.buildUrl(getDeviceIp());
+        String ip = getDeviceIp();
+        String url = WebServer.buildUrl(ip);
         webAddressView.setText(url);
-        updateWebAddressQr(url);
+        // IP 没解析出来时地址文字照常显示（用户据此知道要查网络），但不给二维码：
+        // 把 0.0.0.0 编成码，扫出来是个连不上的地址，比不给码更误导人
+        updateWebAddressQr(DeviceIpUtil.isResolved(ip) ? url : null);
     }
 
     /** 电视上用遥控器输 URL 很痛苦，给手机留个扫码入口。 */
-    private void updateWebAddressQr(String url) {
+    private void updateWebAddressQr(@Nullable String url) {
         if (webAddressQrView == null) {
             return;
         }
