@@ -10,7 +10,7 @@ document.getElementById('addSourceForm').addEventListener('submit', async (e) =>
     try {
         const res = await fetch(`${API}/api/sources`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
             body: JSON.stringify({ name: name || url, url })
         });
         if (!res.ok) throw new Error(await res.text());
@@ -237,7 +237,7 @@ async function saveSettings() {
     try {
         const res = await fetch(`${API}/api/settings`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
             body: JSON.stringify({ epgUrl, udpxyProxyBase })
         });
         const data = await res.json();
