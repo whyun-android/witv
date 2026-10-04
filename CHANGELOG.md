@@ -4,6 +4,25 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Added
+
+- **解码方式新增「音频软解 + 视频硬解」档**（`PlaybackDecoderMode.SOFTWARE_AUDIO`）。
+  实测某些盒子声称支持 AC-3/E-AC-3 直通，`MediaCodecAudioRenderer` 便以直通方式胜出、
+  压根不解码，而 HDMI 下游实际解不了，表现为**杜比声道完全没声音**；
+  但改用原有的「软解优先」会连视频一起转软解，老盒子软解 1080p 跟不上实时又变成卡顿。
+  新档位让音频走 FFmpeg 绕开直通、视频留在硬解，两边都成立
+
+### Changed
+
+- 解码方式由单一全局开关改为**音频与视频分别取值**（`WiTVRenderersFactory`）。
+  `DefaultRenderersFactory` 只有一个 `extensionRendererMode`，音视频共用，
+  而这两者的最佳取舍常常相反；现在分别覆写 `buildAudioRenderers` 与 `buildVideoRenderers`
+- 「软解优先」更名为「全部软解优先」，描述中补充了低端设备上 1080p 可能卡顿的提示
+- 新增单元测试 `WiTVRenderersFactoryTest`，直接断言产出的渲染器顺序
+  （顺序由 NextLib 的插入逻辑决定，升级时可能变化，只断言配置值不够）
+
 ## [1.3.0] - 2026-10-03
 
 本版主题是 **UDP / RTP 组播直播**，并引入 FFmpeg 软解补齐电视盒子硬解常缺的编码。

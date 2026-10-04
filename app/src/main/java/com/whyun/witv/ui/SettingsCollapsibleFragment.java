@@ -827,6 +827,8 @@ public class SettingsCollapsibleFragment extends Fragment
 
     private static int decoderModeTitleRes(PlaybackDecoderMode mode) {
         switch (mode) {
+            case SOFTWARE_AUDIO:
+                return R.string.decoder_mode_software_audio;
             case PREFER_SOFTWARE:
                 return R.string.decoder_mode_prefer_software;
             case HARDWARE_ONLY:
@@ -839,6 +841,8 @@ public class SettingsCollapsibleFragment extends Fragment
 
     private static int decoderModeDescriptionRes(PlaybackDecoderMode mode) {
         switch (mode) {
+            case SOFTWARE_AUDIO:
+                return R.string.decoder_mode_software_audio_desc;
             case PREFER_SOFTWARE:
                 return R.string.decoder_mode_prefer_software_desc;
             case HARDWARE_ONLY:

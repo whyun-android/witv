@@ -38,7 +38,6 @@ import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.entity.ChannelSource;
 
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary;
-import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -359,14 +358,14 @@ public class PlayerManager {
         PlaybackDecoderMode mode = preferenceManager.getPlaybackDecoderMode();
         activeDecoderMode = mode;
         Log.i(TAG, String.format(Locale.US,
-                "Decoder mode: %s (extensionRendererMode=%d), ffmpeg=%s",
-                mode.getId(), mode.getExtensionRendererMode(), ffmpegLibrarySummary()));
-        return new NextRenderersFactory(context)
-                .setExtensionRendererMode(mode.getExtensionRendererMode())
+                "Decoder mode: %s (audio=%d, video=%d), ffmpeg=%s",
+                mode.getId(), mode.getAudioExtensionRendererMode(),
+                mode.getVideoExtensionRendererMode(), ffmpegLibrarySummary()));
+        return new WiTVRenderersFactory(context, mode)
                 // 某个 MediaCodec 解码器 configure 失败时，依次尝试同一渲染器里的其它
                 // MediaCodec 解码器（例如 c2.android.avc.decoder 失败后试 c2.qti.avc.decoder）。
                 // 注意它**不会**退到 FFmpeg 渲染器——渲染器早在 supportsFormat 阶段就选定了；
-                // 硬解整体不可用时请用「软解优先」档。
+                // 硬解整体不可用时请改用软解相关档位。
                 .setEnableDecoderFallback(true);
     }
 

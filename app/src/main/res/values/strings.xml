@@ -18,8 +18,10 @@
     <string name="settings_group_decoder">解码方式</string>
     <string name="decoder_mode_auto">硬解优先（推荐）</string>
     <string name="decoder_mode_auto_desc">优先用硬件解码；遇到盒子不支持的编码（如组播常见的 MPEG-2 视频、MP2 音频）自动切软解</string>
-    <string name="decoder_mode_prefer_software">软解优先</string>
-    <string name="decoder_mode_prefer_software_desc">优先用 FFmpeg 软件解码。适用于硬解声称支持但实际黑屏/无声的盒子，CPU 占用更高</string>
+    <string name="decoder_mode_software_audio">音频软解 + 视频硬解</string>
+    <string name="decoder_mode_software_audio_desc">音频用 FFmpeg 解码以绕开杜比直通，视频仍走硬解。适用于「杜比声道没声音、但视频正常」的设备</string>
+    <string name="decoder_mode_prefer_software">全部软解优先</string>
+    <string name="decoder_mode_prefer_software_desc">音视频都优先用 FFmpeg 软件解码。CPU 占用高，低端盒子上 1080p 视频可能跟不上实时而卡顿</string>
     <string name="decoder_mode_hardware_only">仅硬解</string>
     <string name="decoder_mode_hardware_only_desc">完全不加载软解。用于排查软解自身引入的问题，或极低端 CPU 设备</string>
     <string name="decoder_mode_saved">解码方式已切换为「%1$s」，已重新起播当前频道</string>
