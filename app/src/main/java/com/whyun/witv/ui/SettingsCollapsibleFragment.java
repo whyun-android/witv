@@ -575,6 +575,10 @@ public class SettingsCollapsibleFragment extends Fragment
                         preferenceManager.isReverseChannelKeysEnabled(),
                         ctx.getString(R.string.reverse_channel_keys),
                         ctx.getString(R.string.reverse_channel_keys_hint)));
+                rows.add(new SettingsPanelAdapter.CheckRow(SettingsPanelAdapter.CheckRow.Kind.USE_AS_LAUNCHER,
+                        LauncherHelper.isHomeEnabled(ctx),
+                        ctx.getString(R.string.use_as_launcher),
+                        ctx.getString(R.string.use_as_launcher_hint)));
                 break;
             case CAT_MULTICAST:
                 rows.add(new SettingsPanelAdapter.MulticastProxyRow(
@@ -809,6 +813,20 @@ public class SettingsCollapsibleFragment extends Fragment
         Toast.makeText(requireContext(),
                 checked ? "已开启反转换台键" : "已关闭反转换台键",
                 Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onUseAsLauncher(boolean checked) {
+        LauncherHelper.setHomeEnabled(requireContext(), checked);
+        if (checked) {
+            Toast.makeText(requireContext(), R.string.use_as_launcher_enabled_toast,
+                    Toast.LENGTH_LONG).show();
+            LauncherHelper.requestChooseDefaultHome(requireActivity());
+        } else {
+            // HOME 组件被禁用后系统会自动回退到其他桌面或重新询问
+            Toast.makeText(requireContext(), R.string.use_as_launcher_disabled_toast,
+                    Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override

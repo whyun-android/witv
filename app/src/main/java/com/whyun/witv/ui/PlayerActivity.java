@@ -1,6 +1,13 @@
 package com.whyun.witv.ui;
 
 import android.app.AlertDialog;
+import android.content.Intent;
+import android.media.MediaCodecList;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
+import android.net.NetworkRequest;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.graphics.Bitmap;
@@ -49,6 +56,7 @@ import com.whyun.witv.data.repository.ChannelRepository;
 import com.whyun.witv.data.repository.EpgRepository;
 import com.whyun.witv.player.PlayerManager;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -118,6 +126,25 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private boolean overlayVisible = false;
     private final Runnable hideOverlayRunnable = () -> hideOverlay();
     private AlertDialog exitDialog;
+    private AlertDialog appSwitcherDialog;
+
+    /**
+     * 当前存活的播放页。作为桌面时按 Home 键，系统会在桌面栈里另起一个任务新建实例，
+     * singleTask 管不到原先从启动器打开的那个；不处理就会两个播放器同时拉流。
+     */
+    private static WeakReference<PlayerActivity> liveInstance;
+
+    /** 网络未就绪时挂起首次加载，见 {@link #loadAndPlayWhenNetworkReady()} */
+    private ConnectivityManager.NetworkCallback networkWaitCallback;
+
+    /** 进程内已成功取到过解码器列表，之后不必再预热 */
+    private static volatile boolean codecListReady;
+    /** 预热超过这么久才提示「等待系统解码服务」，正常情况下几十毫秒就返回，不闪提示 */
+    private static final long CODEC_WARMUP_HINT_DELAY_MS = 800L;
+    private final Runnable codecWarmupHintRunnable = () -> {
+        switchingToast.setText(R.string.waiting_for_codec_service);
+        switchingToast.setVisibility(View.VISIBLE);
+    };
 
     private static final long CHANNEL_LIST_HIDE_IDLE_MS = 10_000L;
     private final Runnable hideChannelListIdleRunnable = () -> {
@@ -175,6 +202,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        PlayerActivity previous = liveInstance != null ? liveInstance.get() : null;
+        liveInstance = new WeakReference<>(this);
+        if (previous != null && previous != this && !previous.isFinishing()) {
+            previous.finishAndRemoveTask();
+        }
         setContentView(R.layout.activity_player);
 
         currentChannelId = getIntent().getLongExtra(EXTRA_CHANNEL_ID, -1);
@@ -188,7 +220,86 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                     .commitNow();
         }
         applyLoadSpeedOverlayPreference();
-        loadAndPlay();
+        warmUpCodecListThen(this::loadAndPlayWhenNetworkReady);
+    }
+
+    /**
+     * 起播前先在后台线程取一次系统解码器列表。
+     *
+     * <p>部分盒子（p230 实测）开机时 mediacodec 进程会崩溃，要等 init 约 30 秒后重新拉起；
+     * 期间任何解码器查询都会阻塞。若直接起播，阻塞的是 ExoPlayer 的播放线程，
+     * 数据照收、画面不出，15 秒后被换源超时判为「所有播放源均不可用」，停在失败页。
+     * 先在这里等到解码服务可用，换源计时才从真正能播的时候开始。
+     * MediaCodecList 在进程内只初始化一次，之后 ExoPlayer 的查询直接命中缓存。
+     */
+    private void warmUpCodecListThen(Runnable next) {
+        if (codecListReady) {
+            next.run();
+            return;
+        }
+        handler.postDelayed(codecWarmupHintRunnable, CODEC_WARMUP_HINT_DELAY_MS);
+        new Thread(() -> {
+            try {
+                new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos();
+                codecListReady = true;
+            } catch (RuntimeException e) {
+                // 取不到也照常起播，交给播放器自己的出错与换源逻辑
+                android.util.Log.w("PlayerActivity", "Codec list warm-up failed", e);
+            }
+            handler.post(() -> {
+                handler.removeCallbacks(codecWarmupHintRunnable);
+                if (isFinishing()) {
+                    return;
+                }
+                switchingToast.setVisibility(View.GONE);
+                next.run();
+            });
+        }, "codec-warmup").start();
+    }
+
+    /**
+     * 作为桌面开机自启时，播放页往往比网卡拿到 IP 还早一两秒：M3U 刷新失败、
+     * 首个源超时后整页停在「所有播放源均不可用」。网络未连上就先提示等待，连上后再加载。
+     */
+    private void loadAndPlayWhenNetworkReady() {
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        NetworkInfo active = cm != null ? cm.getActiveNetworkInfo() : null;
+        if (cm == null || (active != null && active.isConnected())) {
+            loadAndPlay();
+            return;
+        }
+        switchingToast.setText(R.string.waiting_for_network);
+        switchingToast.setVisibility(View.VISIBLE);
+        networkWaitCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                handler.post(() -> {
+                    if (networkWaitCallback == null || isFinishing()) {
+                        return;
+                    }
+                    unregisterNetworkWait();
+                    reloadInitialChannel();
+                });
+            }
+        };
+        cm.registerNetworkCallback(new NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build(), networkWaitCallback);
+    }
+
+    private void unregisterNetworkWait() {
+        if (networkWaitCallback == null) {
+            return;
+        }
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (cm != null) {
+            try {
+                cm.unregisterNetworkCallback(networkWaitCallback);
+            } catch (IllegalArgumentException ignored) {
+                // 已注销
+            }
+        }
+        networkWaitCallback = null;
     }
 
     private void initViews() {
@@ -1414,7 +1525,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 .setTitle(R.string.exit_dialog_title)
                 .setMessage(R.string.exit_dialog_message)
                 .setNegativeButton(R.string.settings, (dialog, which) -> showSettingsPanel())
-                .setPositiveButton(R.string.exit_dialog_rest, (dialog, which) -> finish())
+                .setNeutralButton(R.string.exit_dialog_switch_app, (dialog, which) -> showAppSwitcher())
+                .setPositiveButton(R.string.exit_dialog_rest, (dialog, which) -> rest())
                 .create();
         exitDialog.setOnDismissListener(dialog -> exitDialog = null);
         exitDialog.show();
@@ -1422,6 +1534,49 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (restButton != null) {
             restButton.post(restButton::requestFocus);
         }
+    }
+
+    /**
+     * 作为默认桌面时不能 finish：系统会立刻重新拉起桌面，看起来就是「退不出去」。
+     * 改为把任务退到后台，回到上一个应用（没有的话保持原样）。
+     */
+    private void rest() {
+        if (LauncherHelper.isDefaultHome(this)) {
+            moveTaskToBack(true);
+        } else {
+            finish();
+        }
+    }
+
+    private void showAppSwitcher() {
+        if (isFinishing()) {
+            return;
+        }
+        if (appSwitcherDialog != null && appSwitcherDialog.isShowing()) {
+            return;
+        }
+        appSwitcherDialog = AppSwitcherDialog.show(this);
+        appSwitcherDialog.setOnDismissListener(dialog -> appSwitcherDialog = null);
+    }
+
+    /**
+     * singleTask：作为桌面时每次按 Home 都会走到这里。只收起面板和弹窗回到全屏播放，
+     * 不重新加载频道，避免打断正在播的节目。
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (exitDialog != null && exitDialog.isShowing()) {
+            exitDialog.dismiss();
+        }
+        if (appSwitcherDialog != null && appSwitcherDialog.isShowing()) {
+            appSwitcherDialog.dismiss();
+        }
+        if (isSettingsPanelVisible()) {
+            hideSettingsPanel();
+        }
+        hideOverlay();
     }
 
     // PlayerManager.Callback implementations
@@ -1501,12 +1656,19 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        unregisterNetworkWait();
         handler.removeCallbacksAndMessages(null);
         ExoPlayer exo = playerManager.getPlayer();
         if (exo != null) {
             exo.removeListener(mediaInfoListener);
         }
-        WiTVApp.getInstance().setActivePlayerManager(null);
+        // 被新实例顶替时，新实例已经登记了自己的 PlayerManager，不能把它清掉
+        if (WiTVApp.getInstance().getActivePlayerManager() == playerManager) {
+            WiTVApp.getInstance().setActivePlayerManager(null);
+        }
+        if (liveInstance != null && liveInstance.get() == this) {
+            liveInstance = null;
+        }
         playerManager.release();
         executor.shutdown();
     }
