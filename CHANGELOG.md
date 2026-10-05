@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-05
+
+本版让 WiTV 可以直接当电视盒子的桌面：开机就是电视，按 Home 回到正在播的画面，
+其他桌面和应用从返回键的「切换应用」进入，随时能换回原来的桌面。
+开机即播在真机（p230）上排查出系统解码服务开机崩溃约 30 秒的问题，起播前会等它恢复。
+使用手册新增「作为桌面启动」一节。单元测试总数增至 251 个。
+
 ### Added
 
 - **可作为桌面启动**：设置 → 播放选项 → 「作为桌面启动」。默认关闭——关闭时 HOME 组件
@@ -253,6 +260,7 @@
 - `SettingsCollapsibleFragment`：切换播放线路后子菜单刷新，方向键右键无法回到主菜单
 
 [1.1.0]: https://github.com/whyun-android/witv/compare/v1.0.2...v1.1.0
+[1.5.0]: https://github.com/whyun-android/witv/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/whyun-android/witv/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/whyun-android/witv/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/whyun-android/witv/compare/v1.2.0...v1.2.1
