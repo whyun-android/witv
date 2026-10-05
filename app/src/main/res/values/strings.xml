@@ -6,6 +6,8 @@
     <string name="loading">加载中…</string>
     <string name="all_sources_failed">所有播放源均不可用</string>
     <string name="switching_source">正在切换播放源…</string>
+    <string name="waiting_for_network">正在等待网络连接…</string>
+    <string name="waiting_for_codec_service">正在等待系统解码服务…</string>
     <string name="settings">设置</string>
     <string name="epg_url">EPG 地址</string>
     <string name="source_management">播放源管理</string>
@@ -68,8 +70,8 @@
     <string name="exit_dialog_rest">休息一下</string>
     <string name="exit_dialog_switch_app">切换应用</string>
     <string name="use_as_launcher">作为桌面启动</string>
-    <string name="use_as_launcher_hint">开启后按 Home 键或开机直接进入 WiTV；需在弹出的列表中选择 WiTV 并设为「始终」。返回键 → 切换应用 可打开其他桌面与应用，关闭此项即恢复原桌面</string>
-    <string name="use_as_launcher_enabled_toast">请在弹出的列表中选择 WiTV，并设为「始终」</string>
+    <string name="use_as_launcher_hint">开启后按 Home 键或开机直接进入 WiTV；需在系统的「主屏幕应用」或弹出的桌面列表中选择 WiTV。返回键 → 切换应用 可打开其他桌面与应用，关闭此项即恢复原桌面</string>
+    <string name="use_as_launcher_enabled_toast">请把「主屏幕应用」设为 WiTV（弹出桌面列表时选 WiTV 并点「始终」）</string>
     <string name="use_as_launcher_disabled_toast">已关闭作为桌面启动</string>
     <string name="app_switcher_title">切换应用</string>
     <string name="app_switcher_change_default">更改默认桌面…</string>

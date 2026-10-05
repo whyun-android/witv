@@ -1,6 +1,7 @@
 package com.whyun.witv.ui;
 
 import android.content.ComponentName;
+import android.content.pm.ResolveInfo;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -10,6 +11,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 public class LauncherHelperTest {
@@ -37,6 +40,19 @@ public class LauncherHelperTest {
 
         assertEquals(1, out.size());
         assertEquals("TvMain", out.get(0).component.getClassName());
+    }
+
+    @Test
+    public void isRealHomeRejectsSetupWizardAndFallbackHome() {
+        ResolveInfo launcher = new ResolveInfo();
+        ResolveInfo provision = new ResolveInfo();
+        provision.priority = 1;
+        ResolveInfo fallback = new ResolveInfo();
+        fallback.priority = -1000;
+
+        assertTrue(LauncherHelper.isRealHome(launcher));
+        assertFalse(LauncherHelper.isRealHome(provision));
+        assertFalse(LauncherHelper.isRealHome(fallback));
     }
 
     @Test

@@ -79,7 +79,9 @@ public final class LauncherHelper {
      */
     public static void requestChooseDefaultHome(Activity activity) {
         PackageManager pm = activity.getPackageManager();
-        Intent settings = new Intent(Settings.ACTION_HOME_SETTINGS);
+        // 不加 NEW_TASK 会压进 WiTV 自己的任务栈，之后 WiTV 被顶替时会连带关掉设置页
+        Intent settings = new Intent(Settings.ACTION_HOME_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         if (settings.resolveActivity(pm) != null) {
             try {
                 activity.startActivity(settings);
@@ -102,14 +104,22 @@ public final class LauncherHelper {
     /** 除 WiTV 以外的所有桌面 */
     public static List<AppEntry> queryOtherHomes(Context context) {
         PackageManager pm = context.getPackageManager();
-        List<AppEntry> entries = new ArrayList<>();
-        for (AppEntry e : toEntries(pm, pm.queryIntentActivities(homeIntent(), 0))) {
-            // 系统设置的 FallbackHome 只在开机解锁前兜底，直接打开是空白页
-            if (!e.component.getClassName().endsWith(".FallbackHome")) {
-                entries.add(e);
+        List<ResolveInfo> homes = new ArrayList<>();
+        for (ResolveInfo ri : pm.queryIntentActivities(homeIntent(), 0)) {
+            if (isRealHome(ri)) {
+                homes.add(ri);
             }
         }
-        return dedupeAndSort(entries, context.getPackageName());
+        return dedupeAndSort(toEntries(pm, homes), context.getPackageName());
+    }
+
+    /**
+     * 排除不是给人用的 HOME 组件：开机向导（如 com.android.provision）用正优先级抢在
+     * 真正桌面之前，打开它可能重走一遍开机设置；FallbackHome 优先级为负，只在开机解锁前兜底，
+     * 打开是空白页。正常桌面不声明优先级，即 0。
+     */
+    static boolean isRealHome(ResolveInfo ri) {
+        return ri.priority == 0;
     }
 
     /** 电视与手机启动器里能看到的应用，按包名去重（同一应用优先保留 Leanback 入口） */
