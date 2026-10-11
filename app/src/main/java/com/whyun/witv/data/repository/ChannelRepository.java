@@ -2,6 +2,8 @@ package com.whyun.witv.data.repository;
 
 import android.content.Context;
 
+import androidx.annotation.VisibleForTesting;
+
 import com.whyun.witv.data.BomAwareText;
 import com.whyun.witv.data.GzipAwareStreams;
 import com.whyun.witv.data.db.AppDatabase;
@@ -44,15 +46,20 @@ public class ChannelRepository {
     private final OkHttpClient httpClient;
 
     public ChannelRepository(Context context) {
-        this.db = AppDatabase.getInstance(context);
+        this(AppDatabase.getInstance(context), new OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build());
+    }
+
+    @VisibleForTesting
+    ChannelRepository(AppDatabase db, OkHttpClient httpClient) {
+        this.db = db;
         this.channelDao = db.channelDao();
         this.channelSourceDao = db.channelSourceDao();
         this.m3uSourceDao = db.m3uSourceDao();
         this.favoriteChannelDao = db.favoriteChannelDao();
-        this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .build();
+        this.httpClient = httpClient;
     }
 
     /**
@@ -93,6 +100,11 @@ public class ChannelRepository {
             String content = BomAwareText.decode(
                     raw, contentType != null ? contentType.charset() : null);
             M3UParser.ParseResult result = new M3UParser().parse(content);
+            // 一个频道都没解析出来，多半是源站临时返回了空页面或错误页。照常写库会把本地缓存的频道
+            // 全部删光，而播放页是先用缓存起播的，所以按刷新失败处理，保留原有频道
+            if (result.channels == null || result.channels.isEmpty()) {
+                throw new IOException("M3U contains no channels: " + source.url);
+            }
             // channel_sources 是先删后插的：不放进事务的话，播放页刷新途中换台会读到空的播放源列表
             db.runInTransaction(() -> saveParsedSource(source, result));
             return result;
