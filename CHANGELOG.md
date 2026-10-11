@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-11
+
+本版集中改善日常看电视的手感：频道菜单的焦点、编号和节目名一眼可辨，
+开启「启动时刷新 M3U」后不再等刷新完才出画面（p230 实测从近 50 秒降到约 1 秒），
+CCTV-4K 在默认的「硬解优先」下不再落到软解卡顿。单元测试总数增至 258 个。
+
 ### Changed
 
 - **频道菜单更适合遥控器操作**：焦点行改为实心蓝底加白色描边，和「当前在播」行的浅色底区分开，
@@ -292,6 +298,7 @@
 - `SettingsCollapsibleFragment`：切换播放线路后子菜单刷新，方向键右键无法回到主菜单
 
 [1.1.0]: https://github.com/whyun-android/witv/compare/v1.0.2...v1.1.0
+[1.5.1]: https://github.com/whyun-android/witv/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/whyun-android/witv/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/whyun-android/witv/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/whyun-android/witv/compare/v1.2.1...v1.3.0
