@@ -130,6 +130,15 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     /** 频道菜单逐行查当前节目，单独一条线程，免得排在换台/右侧 EPG 预览前面 */
     private final ExecutorService channelListProgramExecutor = Executors.newSingleThreadExecutor();
+    /** 启动时刷新 M3U 要走网络，可能卡很久，不能占着 {@link #executor} */
+    private final ExecutorService startupRefreshExecutor = Executors.newSingleThreadExecutor();
+    /**
+     * 正在播的是启动刷新前缓存里的播放源。开「启动时刷新」通常就是因为地址会变，
+     * 旧地址全部失败时要用刷新后的地址再播一次。以下三个仅主线程访问。
+     */
+    private boolean playingPreRefreshSources;
+    private boolean startupRefreshSucceeded;
+    private boolean allSourcesFailedShowing;
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
 
     private boolean overlayVisible = false;
@@ -475,55 +484,133 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         mediaInfoAudioColumn.setText(cols.audioColumn);
     }
 
+    /**
+     * 先用本地缓存的频道列表起播，「启动时刷新 M3U」放到后台线程做。
+     *
+     * <p>以前是刷新完才起播，而且刷新占着 {@link #executor}：源站慢或卡住时（实测超时要等近 50 秒），
+     * 这段时间画面不出、频道菜单也打不开。缓存为空（首次使用）时才等刷新结果再播。
+     */
     private void loadAndPlay() {
+        final boolean refresh = preferenceManager.isRefreshM3uOnStartupEnabled();
         executor.execute(() -> {
-            AppDatabase db = AppDatabase.getInstance(this);
-            if (preferenceManager.isRefreshM3uOnStartupEnabled()) {
-                tryRefreshActiveM3uSource(db);
+            boolean played = loadCachedChannelsAndPlay(!refresh);
+            if (!refresh) {
+                return;
             }
-            currentChannel = resolveInitialChannel(db);
-            allChannels = sourceId > 0 ? db.channelDao().getBySource(sourceId) : new ArrayList<>();
-
-            if (currentChannel != null) {
-                for (int i = 0; i < allChannels.size(); i++) {
-                    if (allChannels.get(i).id == currentChannelId) {
-                        currentChannelIndex = i;
-                        break;
-                    }
+            if (played) {
+                runOnUiThread(() -> playingPreRefreshSources = true);
+            }
+            if (!played) {
+                runOnUiThread(() -> {
+                    switchingToast.setText(R.string.refreshing_channel_list);
+                    switchingToast.setVisibility(View.VISIBLE);
+                });
+            }
+            startupRefreshExecutor.execute(() -> {
+                boolean refreshed = tryRefreshActiveM3uSource(AppDatabase.getInstance(this));
+                if (isFinishing() || isDestroyed() || executor.isShutdown()) {
+                    return;
                 }
-            }
-
-            if (currentChannel != null) {
-                preferenceManager.saveLastChannel(currentChannelId, sourceId);
-                isFavorite = channelRepository.isFavorite(currentChannelId);
-                List<ChannelSource> sources = channelRepository.getChannelSources(currentChannelId);
-                runOnUiThread(() -> {
-                    showEmptyState(false);
-                    updateChannelInfo();
-                    dismissAllSourcesFailedToast();
-                    playerManager.playChannel(sources);
-                    showOverlayTemporarily();
+                executor.execute(() -> {
+                    if (!played) {
+                        runOnUiThread(() -> switchingToast.setVisibility(View.GONE));
+                        loadCachedChannelsAndPlay(true);
+                    } else if (refreshed) {
+                        reloadChannelsAfterRefresh();
+                    }
                 });
-            } else {
-                runOnUiThread(() -> {
-                    showEmptyState(true);
-                    hideOverlay();
-                    switchingToast.setVisibility(View.GONE);
-                });
-            }
+            });
         });
     }
 
-    private void tryRefreshActiveM3uSource(AppDatabase db) {
+    /**
+     * 从数据库取起播频道和频道列表并开始播放，须在 {@link #executor} 上调用。
+     *
+     * @param showEmptyWhenMissing 没有可播频道时是否显示空状态页（后面还要等刷新结果时不显示）
+     * @return 是否已开始播放
+     */
+    private boolean loadCachedChannelsAndPlay(boolean showEmptyWhenMissing) {
+        AppDatabase db = AppDatabase.getInstance(this);
+        currentChannel = resolveInitialChannel(db);
+        allChannels = sourceId > 0 ? db.channelDao().getBySource(sourceId) : new ArrayList<>();
+
+        if (currentChannel != null) {
+            for (int i = 0; i < allChannels.size(); i++) {
+                if (allChannels.get(i).id == currentChannelId) {
+                    currentChannelIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (currentChannel != null) {
+            preferenceManager.saveLastChannel(currentChannelId, sourceId);
+            isFavorite = channelRepository.isFavorite(currentChannelId);
+            List<ChannelSource> sources = channelRepository.getChannelSources(currentChannelId);
+            runOnUiThread(() -> {
+                showEmptyState(false);
+                updateChannelInfo();
+                dismissAllSourcesFailedToast();
+                playerManager.playChannel(sources);
+                showOverlayTemporarily();
+            });
+            return true;
+        }
+        if (showEmptyWhenMissing) {
+            runOnUiThread(() -> {
+                showEmptyState(true);
+                hideOverlay();
+                switchingToast.setVisibility(View.GONE);
+            });
+        }
+        return false;
+    }
+
+    /**
+     * 后台刷新 M3U 后换上新的频道列表，不打断正在播的节目。须在 {@link #executor} 上调用。
+     *
+     * <p>刷新按 tvgId / 名称原地更新，频道 id 不变，所以只需按 id 找回当前频道的位置。
+     * 频道菜单开着时不重建它，免得打断用户选台；下次打开菜单就是新列表。
+     */
+    private void reloadChannelsAfterRefresh() {
+        if (sourceId <= 0) {
+            return;
+        }
+        List<Channel> refreshed = AppDatabase.getInstance(this).channelDao().getBySource(sourceId);
+        runOnUiThread(() -> {
+            if (isFinishing() || refreshed.isEmpty()) {
+                return;
+            }
+            allChannels = refreshed;
+            startupRefreshSucceeded = true;
+            for (int i = 0; i < refreshed.size(); i++) {
+                if (refreshed.get(i).id == currentChannelId) {
+                    currentChannelIndex = i;
+                    currentChannel = refreshed.get(i);
+                    if (playingPreRefreshSources && allSourcesFailedShowing) {
+                        playChannel(currentChannel);
+                    }
+                    return;
+                }
+            }
+            // 当前频道已从源里删掉：照常播完，上下键从列表开头继续
+            currentChannelIndex = Math.min(currentChannelIndex, refreshed.size() - 1);
+        });
+    }
+
+    /** @return 是否刷新成功 */
+    private boolean tryRefreshActiveM3uSource(AppDatabase db) {
         com.whyun.witv.data.db.entity.M3USource activeSource = db.m3uSourceDao().getActive();
         if (activeSource == null || activeSource.url == null || activeSource.url.isEmpty()) {
-            return;
+            return false;
         }
         try {
             channelRepository.loadSource(activeSource);
+            return true;
         } catch (Exception e) {
             // Keep existing channel cache if startup refresh fails.
             android.util.Log.w("PlayerActivity", "Failed to refresh active M3U on startup", e);
+            return false;
         }
     }
 
@@ -562,6 +649,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                     showEmptyState(false);
                     updateChannelInfo();
                     dismissAllSourcesFailedToast();
+                    playingPreRefreshSources = false;
                     playerManager.playChannel(sources);
                     showOverlayTemporarily();
                 });
@@ -705,6 +793,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     private void playChannel(Channel channel) {
+        playingPreRefreshSources = false;
         currentChannel = channel;
         currentChannelId = channel.id;
         preferenceManager.saveLastChannel(channel.id, sourceId);
@@ -722,6 +811,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     /** 用户切换频道或重新发起播放时关闭「所有源失败」等常驻提示；成功开播时仍由 onPlaybackStarted 处理。 */
     private void dismissAllSourcesFailedToast() {
+        allSourcesFailedShowing = false;
         switchingToast.setVisibility(View.GONE);
     }
 
@@ -906,6 +996,64 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         });
     }
 
+    private static boolean hasEpgKey(Channel ch) {
+        return (ch.tvgId != null && !ch.tvgId.isEmpty())
+                || (ch.tvgName != null && !ch.tvgName.isEmpty());
+    }
+
+    private final ChannelListAdapter.CurrentProgramSource channelListProgramSource =
+            new ChannelListAdapter.CurrentProgramSource() {
+                @Nullable
+                @Override
+                public String getCachedCurrentProgram(Channel channel) {
+                    if (!hasEpgKey(channel)) {
+                        return "";
+                    }
+                    return channelListProgramCache.get(channel.id);
+                }
+
+                @Override
+                public void requestCurrentProgram(Channel channel) {
+                    requestChannelListProgram(channel);
+                }
+            };
+
+    private void requestChannelListProgram(Channel ch) {
+        if (!channelListProgramPending.add(ch.id)) {
+            return;
+        }
+        channelListProgramExecutor.execute(() -> {
+            String title = "";
+            long now = System.currentTimeMillis();
+            for (EpgProgram p : epgRepository.getCurrentAndNext(ch.tvgId, ch.tvgName)) {
+                if (now >= p.startTime && now < p.endTime && p.title != null) {
+                    title = p.title;
+                    break;
+                }
+            }
+            final String result = title;
+            runOnUiThread(() -> {
+                channelListProgramPending.remove(ch.id);
+                if (isFinishing()) {
+                    return;
+                }
+                channelListProgramCache.put(ch.id, result);
+                notifyChannelListProgramLoaded(ch.id);
+            });
+        });
+    }
+
+    private void notifyChannelListProgramLoaded(long channelId) {
+        if (channelListAdapter == null) {
+            return;
+        }
+        if (RecyclerViewUpdateGate.postponeIfBusy(channelListOverlay,
+                () -> notifyChannelListProgramLoaded(channelId), channelListOverlay)) {
+            return;
+        }
+        channelListAdapter.notifyCurrentProgramLoaded(channelId);
+    }
+
     /**
      * 连续节目列表；正在播出的一条用主题色加粗，其余沿用 TextView 默认 secondary 色。
      */
@@ -1039,64 +1187,6 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (playerManager != null) {
             playerManager.rescheduleSourceTimeoutFromPreferences();
         }
-    }
-
-    private static boolean hasEpgKey(Channel ch) {
-        return (ch.tvgId != null && !ch.tvgId.isEmpty())
-                || (ch.tvgName != null && !ch.tvgName.isEmpty());
-    }
-
-    private final ChannelListAdapter.CurrentProgramSource channelListProgramSource =
-            new ChannelListAdapter.CurrentProgramSource() {
-                @Nullable
-                @Override
-                public String getCachedCurrentProgram(Channel channel) {
-                    if (!hasEpgKey(channel)) {
-                        return "";
-                    }
-                    return channelListProgramCache.get(channel.id);
-                }
-
-                @Override
-                public void requestCurrentProgram(Channel channel) {
-                    requestChannelListProgram(channel);
-                }
-            };
-
-    private void requestChannelListProgram(Channel ch) {
-        if (!channelListProgramPending.add(ch.id)) {
-            return;
-        }
-        channelListProgramExecutor.execute(() -> {
-            String title = "";
-            long now = System.currentTimeMillis();
-            for (EpgProgram p : epgRepository.getCurrentAndNext(ch.tvgId, ch.tvgName)) {
-                if (now >= p.startTime && now < p.endTime && p.title != null) {
-                    title = p.title;
-                    break;
-                }
-            }
-            final String result = title;
-            runOnUiThread(() -> {
-                channelListProgramPending.remove(ch.id);
-                if (isFinishing()) {
-                    return;
-                }
-                channelListProgramCache.put(ch.id, result);
-                notifyChannelListProgramLoaded(ch.id);
-            });
-        });
-    }
-
-    private void notifyChannelListProgramLoaded(long channelId) {
-        if (channelListAdapter == null) {
-            return;
-        }
-        if (RecyclerViewUpdateGate.postponeIfBusy(channelListOverlay,
-                () -> notifyChannelListProgramLoaded(channelId), channelListOverlay)) {
-            return;
-        }
-        channelListAdapter.notifyCurrentProgramLoaded(channelId);
     }
 
     /**
@@ -1701,12 +1791,19 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     @Override
     public void onAllSourcesFailed() {
+        if (playingPreRefreshSources && startupRefreshSucceeded && currentChannel != null) {
+            // 缓存里的旧地址都失效了，而刷新已经拿到新地址：直接用新地址重播（只重试这一次）
+            playChannel(currentChannel);
+            return;
+        }
+        allSourcesFailedShowing = true;
         switchingToast.setText(getString(R.string.all_sources_failed));
         switchingToast.setVisibility(View.VISIBLE);
     }
 
     @Override
     public void onPlaybackStarted(int sourceIndex, int total) {
+        allSourcesFailedShowing = false;
         switchingToast.setVisibility(View.GONE);
         sourceInfoView.setText(String.format(Locale.getDefault(),
                 getString(R.string.source_count) + " (当前: %d)", total, sourceIndex + 1));
@@ -1771,6 +1868,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         playerManager.release();
         executor.shutdown();
         channelListProgramExecutor.shutdown();
+        startupRefreshExecutor.shutdown();
     }
 
     @Override
