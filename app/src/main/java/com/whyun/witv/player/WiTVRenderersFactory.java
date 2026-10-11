@@ -6,10 +6,12 @@ import android.os.Handler;
 import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.Renderer;
 import androidx.media3.exoplayer.audio.AudioRendererEventListener;
 import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
+import androidx.media3.exoplayer.video.MediaCodecVideoRenderer;
 import androidx.media3.exoplayer.video.VideoRendererEventListener;
 
 import java.util.ArrayList;
@@ -31,6 +33,9 @@ import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory;
  *
  * <p>所以这里分别覆写两个 {@code build*Renderers}，各自传入
  * {@link PlaybackDecoderMode} 给出的模式，忽略框架传进来的那个全局值。
+ *
+ * <p>视频硬解优先、FFmpeg 补位时，硬解渲染器再包一层 {@link LevelTolerantVideoRenderer}：
+ * 码流 Level 标得比硬解声明的高时（CCTV-4K），仍让硬解胜出，而不是落到软解上卡顿。
  */
 @OptIn(markerClass = UnstableApi.class)
 final class WiTVRenderersFactory extends NextRenderersFactory {
@@ -67,8 +72,20 @@ final class WiTVRenderersFactory extends NextRenderersFactory {
                                        @NonNull VideoRendererEventListener eventListener,
                                        long allowedVideoJoiningTimeMs,
                                        @NonNull ArrayList<Renderer> out) {
-        super.buildVideoRenderers(context, decoderMode.getVideoExtensionRendererMode(),
+        int videoMode = decoderMode.getVideoExtensionRendererMode();
+        int start = out.size();
+        super.buildVideoRenderers(context, videoMode,
                 mediaCodecSelector, enableDecoderFallback, eventHandler, eventListener,
                 allowedVideoJoiningTimeMs, out);
+        if (videoMode != DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON) {
+            // PREFER 是用户明确要软解优先；OFF 没有软解可抢，都不需要放宽
+            return;
+        }
+        for (int i = start; i < out.size(); i++) {
+            Renderer renderer = out.get(i);
+            if (renderer instanceof MediaCodecVideoRenderer) {
+                out.set(i, new LevelTolerantVideoRenderer(renderer, context, mediaCodecSelector));
+            }
+        }
     }
 }

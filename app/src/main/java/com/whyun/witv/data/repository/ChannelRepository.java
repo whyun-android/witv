@@ -2,6 +2,8 @@ package com.whyun.witv.data.repository;
 
 import android.content.Context;
 
+import androidx.annotation.VisibleForTesting;
+
 import com.whyun.witv.data.BomAwareText;
 import com.whyun.witv.data.GzipAwareStreams;
 import com.whyun.witv.data.db.AppDatabase;
@@ -36,6 +38,7 @@ import okhttp3.Response;
  */
 public class ChannelRepository {
 
+    private final AppDatabase db;
     private final ChannelDao channelDao;
     private final ChannelSourceDao channelSourceDao;
     private final M3USourceDao m3uSourceDao;
@@ -43,15 +46,20 @@ public class ChannelRepository {
     private final OkHttpClient httpClient;
 
     public ChannelRepository(Context context) {
-        AppDatabase db = AppDatabase.getInstance(context);
+        this(AppDatabase.getInstance(context), new OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build());
+    }
+
+    @VisibleForTesting
+    ChannelRepository(AppDatabase db, OkHttpClient httpClient) {
+        this.db = db;
         this.channelDao = db.channelDao();
         this.channelSourceDao = db.channelSourceDao();
         this.m3uSourceDao = db.m3uSourceDao();
         this.favoriteChannelDao = db.favoriteChannelDao();
-        this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .build();
+        this.httpClient = httpClient;
     }
 
     /**
@@ -92,80 +100,88 @@ public class ChannelRepository {
             String content = BomAwareText.decode(
                     raw, contentType != null ? contentType.charset() : null);
             M3UParser.ParseResult result = new M3UParser().parse(content);
-
-            long sourceId = source.id;
-
-            // Build map of existing channels keyed by natural key
-            // (tvgId if non-empty, else displayName — same key M3UParser uses for aggregation)
-            List<Channel> existingChannels = channelDao.getBySource(sourceId);
-            Map<String, Channel> existingMap = new LinkedHashMap<>();
-            for (Channel ch : existingChannels) {
-                String key = (ch.tvgId != null && !ch.tvgId.isEmpty()) ? ch.tvgId : ch.displayName;
-                existingMap.put(key, ch);
+            // 一个频道都没解析出来，多半是源站临时返回了空页面或错误页。照常写库会把本地缓存的频道
+            // 全部删光，而播放页是先用缓存起播的，所以按刷新失败处理，保留原有频道
+            if (result.channels == null || result.channels.isEmpty()) {
+                throw new IOException("M3U contains no channels: " + source.url);
             }
-
-            // Delete all channel_sources; they will be re-created with fresh URLs
-            channelSourceDao.deleteBySource(sourceId);
-
-            Set<String> matchedKeys = new HashSet<>();
-            int sortOrder = 0;
-            for (M3UParser.ParsedChannel parsed : result.channels) {
-                String key = (parsed.tvgId != null && !parsed.tvgId.isEmpty())
-                        ? parsed.tvgId : parsed.displayName;
-
-                Channel existing = existingMap.get(key);
-                long channelId;
-
-                if (existing != null) {
-                    matchedKeys.add(key);
-                    existing.tvgId = parsed.tvgId;
-                    existing.tvgName = parsed.tvgName;
-                    existing.displayName = parsed.displayName;
-                    existing.logoUrl = parsed.logoUrl;
-                    existing.groupTitle = parsed.groupTitle;
-                    existing.sortOrder = sortOrder++;
-                    channelDao.update(existing);
-                    channelId = existing.id;
-                } else {
-                    Channel channel = new Channel(
-                            sourceId,
-                            parsed.tvgId,
-                            parsed.tvgName,
-                            parsed.displayName,
-                            parsed.logoUrl,
-                            parsed.groupTitle,
-                            sortOrder++
-                    );
-                    channelId = channelDao.insert(channel);
-                }
-
-                List<ChannelSource> sources = new ArrayList<>();
-                for (int i = 0; i < parsed.sourceUrls.size(); i++) {
-                    sources.add(new ChannelSource(channelId, parsed.sourceUrls.get(i), i));
-                }
-                if (!sources.isEmpty()) {
-                    channelSourceDao.insertAll(sources);
-                }
-            }
-
-            // Remove channels that no longer exist in the source
-            List<Long> toDelete = new ArrayList<>();
-            for (Map.Entry<String, Channel> entry : existingMap.entrySet()) {
-                if (!matchedKeys.contains(entry.getKey())) {
-                    toDelete.add(entry.getValue().id);
-                }
-            }
-            if (!toDelete.isEmpty()) {
-                channelDao.deleteByIds(toDelete);
-            }
-
-            // Update source EPG URL if found in parse result
-            if (result.epgUrl != null && !result.epgUrl.isEmpty()) {
-                source.epgUrl = result.epgUrl;
-                m3uSourceDao.update(source);
-            }
-
+            // channel_sources 是先删后插的：不放进事务的话，播放页刷新途中换台会读到空的播放源列表
+            db.runInTransaction(() -> saveParsedSource(source, result));
             return result;
+        }
+    }
+
+    private void saveParsedSource(M3USource source, M3UParser.ParseResult result) {
+        long sourceId = source.id;
+
+        // Build map of existing channels keyed by natural key
+        // (tvgId if non-empty, else displayName — same key M3UParser uses for aggregation)
+        List<Channel> existingChannels = channelDao.getBySource(sourceId);
+        Map<String, Channel> existingMap = new LinkedHashMap<>();
+        for (Channel ch : existingChannels) {
+            String key = (ch.tvgId != null && !ch.tvgId.isEmpty()) ? ch.tvgId : ch.displayName;
+            existingMap.put(key, ch);
+        }
+
+        // Delete all channel_sources; they will be re-created with fresh URLs
+        channelSourceDao.deleteBySource(sourceId);
+
+        Set<String> matchedKeys = new HashSet<>();
+        int sortOrder = 0;
+        for (M3UParser.ParsedChannel parsed : result.channels) {
+            String key = (parsed.tvgId != null && !parsed.tvgId.isEmpty())
+                    ? parsed.tvgId : parsed.displayName;
+
+            Channel existing = existingMap.get(key);
+            long channelId;
+
+            if (existing != null) {
+                matchedKeys.add(key);
+                existing.tvgId = parsed.tvgId;
+                existing.tvgName = parsed.tvgName;
+                existing.displayName = parsed.displayName;
+                existing.logoUrl = parsed.logoUrl;
+                existing.groupTitle = parsed.groupTitle;
+                existing.sortOrder = sortOrder++;
+                channelDao.update(existing);
+                channelId = existing.id;
+            } else {
+                Channel channel = new Channel(
+                        sourceId,
+                        parsed.tvgId,
+                        parsed.tvgName,
+                        parsed.displayName,
+                        parsed.logoUrl,
+                        parsed.groupTitle,
+                        sortOrder++
+                );
+                channelId = channelDao.insert(channel);
+            }
+
+            List<ChannelSource> sources = new ArrayList<>();
+            for (int i = 0; i < parsed.sourceUrls.size(); i++) {
+                sources.add(new ChannelSource(channelId, parsed.sourceUrls.get(i), i));
+            }
+            if (!sources.isEmpty()) {
+                channelSourceDao.insertAll(sources);
+            }
+        }
+
+        // Remove channels that no longer exist in the source
+        List<Long> toDelete = new ArrayList<>();
+        for (Map.Entry<String, Channel> entry : existingMap.entrySet()) {
+            if (!matchedKeys.contains(entry.getKey())) {
+                toDelete.add(entry.getValue().id);
+            }
+        }
+        if (!toDelete.isEmpty()) {
+            channelDao.deleteByIds(toDelete);
+        }
+
+        // Update source EPG URL if found in parse result
+        if (result.epgUrl != null && !result.epgUrl.isEmpty()) {
+            source.epgUrl = result.epgUrl;
+            m3uSourceDao.update(source);
         }
     }
 

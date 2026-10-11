@@ -1,6 +1,7 @@
 package com.whyun.witv.player;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -29,9 +30,9 @@ import java.util.List;
 @RunWith(RobolectricTestRunner.class)
 public class WiTVRenderersFactoryTest {
 
-    private static List<String> rendererNames(PlaybackDecoderMode mode, int trackType) {
+    private static Renderer[] createRenderers(PlaybackDecoderMode mode) {
         Context context = ApplicationProvider.getApplicationContext();
-        Renderer[] renderers = new WiTVRenderersFactory(context, mode).createRenderers(
+        return new WiTVRenderersFactory(context, mode).createRenderers(
                 new Handler(Looper.getMainLooper()),
                 new VideoRendererEventListener() {
                 },
@@ -41,13 +42,26 @@ public class WiTVRenderersFactoryTest {
                 },
                 metadata -> {
                 });
+    }
+
+    /** 用 {@code getName()} 而不是类名：硬解视频渲染器可能被 {@link LevelTolerantVideoRenderer} 包住。 */
+    private static List<String> rendererNames(PlaybackDecoderMode mode, int trackType) {
         List<String> names = new ArrayList<>();
-        for (Renderer renderer : renderers) {
+        for (Renderer renderer : createRenderers(mode)) {
             if (renderer.getTrackType() == trackType) {
-                names.add(renderer.getClass().getSimpleName());
+                names.add(renderer.getName());
             }
         }
         return names;
+    }
+
+    private static boolean wrapsHardwareVideo(PlaybackDecoderMode mode) {
+        for (Renderer renderer : createRenderers(mode)) {
+            if (renderer instanceof LevelTolerantVideoRenderer) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int indexOf(List<String> names, String simpleName) {
@@ -105,5 +119,14 @@ public class WiTVRenderersFactoryTest {
         assertEquals("不应加载 FFmpeg 视频渲染器: " + video, -1, indexOf(video, "FfmpegVideoRenderer"));
         assertTrue(indexOf(audio, "MediaCodecAudioRenderer") >= 0);
         assertTrue(indexOf(video, "MediaCodecVideoRenderer") >= 0);
+    }
+
+    /** 只有视频「硬解优先、软解补位」时才需要放宽 Level，其余模式保持原样。 */
+    @Test
+    public void onlyHardwareFirstVideoModesWrapMediaCodecVideoRenderer() {
+        assertTrue(wrapsHardwareVideo(PlaybackDecoderMode.AUTO));
+        assertTrue(wrapsHardwareVideo(PlaybackDecoderMode.SOFTWARE_AUDIO));
+        assertFalse(wrapsHardwareVideo(PlaybackDecoderMode.PREFER_SOFTWARE));
+        assertFalse(wrapsHardwareVideo(PlaybackDecoderMode.HARDWARE_ONLY));
     }
 }
