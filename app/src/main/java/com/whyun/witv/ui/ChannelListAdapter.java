@@ -16,6 +16,7 @@ import com.whyun.witv.data.db.entity.Channel;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.VH> {
@@ -34,6 +35,21 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
         boolean onChannelLongClick(Channel channel);
     }
 
+    /**
+     * 列表行副标题的「正在播出」节目来源。查询要走数据库，由宿主异步完成后调
+     * {@link #notifyCurrentProgramLoaded(long)} 刷新对应行。
+     */
+    public interface CurrentProgramSource {
+        /** 已缓存的节目名；null 表示还没查过，"" 表示查过但没有节目信息 */
+        @Nullable
+        String getCachedCurrentProgram(Channel channel);
+
+        /** 发起异步查询（宿主负责去重） */
+        void requestCurrentProgram(Channel channel);
+    }
+
+    private static final Object PAYLOAD_CURRENT_PROGRAM = new Object();
+
     private final List<Channel> channels;
     private final int selectedIndex;
     private final OnChannelClickListener listener;
@@ -42,6 +58,10 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
     @Nullable
     private final OnChannelLongClickListener longClickListener;
     private Set<Long> favoriteIds = Collections.emptySet();
+    /** 频道 id → 全局频道号（与数字键换台一致）；没有时退回组内序号 */
+    private Map<Long, Integer> channelNumbers = Collections.emptyMap();
+    @Nullable
+    private CurrentProgramSource currentProgramSource;
 
     public ChannelListAdapter(List<Channel> channels, int selectedIndex, OnChannelClickListener listener) {
         this(channels, selectedIndex, Collections.emptySet(), listener, null, null);
@@ -81,6 +101,23 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
         notifyDataSetChanged();
     }
 
+    public void setChannelNumbers(Map<Long, Integer> numbers) {
+        channelNumbers = numbers != null ? numbers : Collections.emptyMap();
+    }
+
+    public void setCurrentProgramSource(@Nullable CurrentProgramSource source) {
+        currentProgramSource = source;
+    }
+
+    /** 某个频道的当前节目查好了，只刷新副标题，不重绑整行（避免打断焦点） */
+    public void notifyCurrentProgramLoaded(long channelId) {
+        for (int i = 0; i < channels.size(); i++) {
+            if (channels.get(i).id == channelId) {
+                notifyItemChanged(i, PAYLOAD_CURRENT_PROGRAM);
+            }
+        }
+    }
+
     @NonNull
     @Override
     public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -94,14 +131,10 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
         Channel channel = channels.get(position);
 
         holder.nameView.setText(channel.displayName);
-        holder.numberView.setText(String.valueOf(position + 1));
+        Integer number = channelNumbers.get(channel.id);
+        holder.numberView.setText(String.valueOf(number != null ? number : position + 1));
 
-        if (channel.groupTitle != null && !channel.groupTitle.isEmpty()) {
-            holder.epgView.setText(channel.groupTitle);
-            holder.epgView.setVisibility(View.VISIBLE);
-        } else {
-            holder.epgView.setVisibility(View.GONE);
-        }
+        bindSubtitle(holder, channel, true);
 
         if (channel.logoUrl != null && !channel.logoUrl.isEmpty()) {
             Glide.with(holder.itemView.getContext())
@@ -118,6 +151,9 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
         }
 
         holder.itemView.setSelected(position == selectedIndex);
+        if (holder.playingView != null) {
+            holder.playingView.setVisibility(position == selectedIndex ? View.VISIBLE : View.GONE);
+        }
         holder.itemView.setOnClickListener(v -> {
             if (listener != null) listener.onChannelClick(channel);
         });
@@ -142,6 +178,33 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
     }
 
     @Override
+    public void onBindViewHolder(@NonNull VH holder, int position, @NonNull List<Object> payloads) {
+        if (!payloads.isEmpty() && payloads.contains(PAYLOAD_CURRENT_PROGRAM)) {
+            bindSubtitle(holder, channels.get(position), false);
+            return;
+        }
+        super.onBindViewHolder(holder, position, payloads);
+    }
+
+    /** 副标题优先显示正在播出的节目，没有（或还没查到）时退回分组名 */
+    private void bindSubtitle(@NonNull VH holder, Channel channel, boolean requestIfMissing) {
+        String program = null;
+        if (currentProgramSource != null) {
+            program = currentProgramSource.getCachedCurrentProgram(channel);
+            if (program == null && requestIfMissing) {
+                currentProgramSource.requestCurrentProgram(channel);
+            }
+        }
+        String subtitle = program != null && !program.isEmpty() ? program : channel.groupTitle;
+        if (subtitle != null && !subtitle.isEmpty()) {
+            holder.epgView.setText(subtitle);
+            holder.epgView.setVisibility(View.VISIBLE);
+        } else {
+            holder.epgView.setVisibility(View.GONE);
+        }
+    }
+
+    @Override
     public int getItemCount() {
         return channels.size();
     }
@@ -152,6 +215,7 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
         TextView numberView;
         ImageView logoView;
         ImageView favoriteView;
+        ImageView playingView;
 
         VH(@NonNull View itemView) {
             super(itemView);
@@ -160,6 +224,7 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
             numberView = itemView.findViewById(R.id.channel_number);
             logoView = itemView.findViewById(R.id.channel_logo);
             favoriteView = itemView.findViewById(R.id.channel_favorite);
+            playingView = itemView.findViewById(R.id.channel_playing);
             itemView.setFocusable(true);
             itemView.setFocusableInTouchMode(true);
         }

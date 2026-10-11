@@ -298,40 +298,57 @@
             android:clipToPadding="false"
             android:padding="8dp" />
 
-        <ScrollView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="#E6101820"
-            android:fillViewport="true"
-            android:scrollbars="vertical">
+            android:orientation="vertical">
 
-            <LinearLayout
+            <ScrollView
+                android:id="@+id/channel_list_epg_scroll"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fillViewport="true"
+                android:scrollbars="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="14dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="20dp">
+
+                    <TextView
+                        android:id="@+id/channel_list_epg_channel_name"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_primary"
+                        android:textSize="24sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/channel_list_epg_content"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:lineSpacingMultiplier="1.25"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="18sp" />
+                </LinearLayout>
+            </ScrollView>
+
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
                 android:paddingHorizontal="14dp"
-                android:paddingTop="14dp"
-                android:paddingBottom="20dp">
-
-                <TextView
-                    android:id="@+id/channel_list_epg_channel_name"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/text_primary"
-                    android:textSize="24sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/channel_list_epg_content"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:lineSpacingMultiplier="1.25"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="18sp" />
-            </LinearLayout>
-        </ScrollView>
+                android:paddingVertical="12dp"
+                android:text="@string/channel_menu_key_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp" />
+        </LinearLayout>
     </LinearLayout>
 
     <!-- Settings: right drawer over player -->

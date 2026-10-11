@@ -11,4 +11,6 @@
     <color name="channel_list_bg">#E6000000</color>
     <color name="source_active">#4CAF50</color>
     <color name="source_error">#F44336</color>
+    <color name="channel_menu_focused">#1E88E5</color>
+    <color name="channel_menu_selected">#4D42A5F5</color>
 </resources>

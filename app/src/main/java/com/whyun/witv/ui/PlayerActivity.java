@@ -60,10 +60,12 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -100,6 +102,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private RecyclerView channelGroupListOverlay;
     private RecyclerView channelListOverlay;
     private ChannelGroupListAdapter channelGroupAdapter;
+    @Nullable
+    private ChannelListAdapter channelListAdapter;
+    /** 频道菜单各行副标题用的「正在播出」节目名，每次打开菜单清空；"" 表示没有节目信息。仅主线程访问 */
+    private final Map<Long, String> channelListProgramCache = new HashMap<>();
+    private final Set<Long> channelListProgramPending = new HashSet<>();
     private TextView channelListEpgChannelName;
     private TextView channelListEpgContent;
     private int channelListEpgLoadSeq = 0;
@@ -121,10 +128,13 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    /** 频道菜单逐行查当前节目，单独一条线程，免得排在换台/右侧 EPG 预览前面 */
+    private final ExecutorService channelListProgramExecutor = Executors.newSingleThreadExecutor();
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
 
     private boolean overlayVisible = false;
-    private final Runnable hideOverlayRunnable = () -> hideOverlay();
+    // 只收起底部信息条：换台/启动后 5 秒内用户可能已经打开了频道菜单，不能连菜单一起关掉
+    private final Runnable hideOverlayRunnable = () -> hideEpgOverlay();
     private AlertDialog exitDialog;
     private AlertDialog appSwitcherDialog;
 
@@ -322,6 +332,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         channelListOverlay = findViewById(R.id.channel_list_overlay);
         channelListEpgChannelName = findViewById(R.id.channel_list_epg_channel_name);
         channelListEpgContent = findViewById(R.id.channel_list_epg_content);
+        // ScrollView 构造时会强制 setFocusable(true)，XML 里关不掉；不关的话频道列表按右键
+        // 焦点会落到这里，之后返回键直接关掉整个菜单，而不是先回到频道列表
+        ScrollView channelListEpgScroll = findViewById(R.id.channel_list_epg_scroll);
+        channelListEpgScroll.setFocusable(false);
+        channelListEpgScroll.setFocusableInTouchMode(false);
         refreshWebHintButton = findViewById(R.id.btn_refresh_web_hint);
         channelGroupListOverlay.setLayoutManager(new LinearLayoutManager(this));
         channelListOverlay.setLayoutManager(new LinearLayoutManager(this));
@@ -847,6 +862,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         handler.postDelayed(hideOverlayRunnable, 5000);
     }
 
+    private void hideEpgOverlay() {
+        epgOverlay.setVisibility(View.GONE);
+        overlayVisible = false;
+    }
+
     private void hideOverlay() {
         cancelChannelListIdleHide();
         epgOverlay.setVisibility(View.GONE);
@@ -868,9 +888,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             return;
         }
         channelListEpgChannelName.setText(ch.displayName);
-        boolean hasEpgKey = (ch.tvgId != null && !ch.tvgId.isEmpty())
-                || (ch.tvgName != null && !ch.tvgName.isEmpty());
-        if (!hasEpgKey) {
+        if (!hasEpgKey(ch)) {
             channelListEpgContent.setText(getString(R.string.no_epg));
             return;
         }
@@ -1023,6 +1041,64 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         }
     }
 
+    private static boolean hasEpgKey(Channel ch) {
+        return (ch.tvgId != null && !ch.tvgId.isEmpty())
+                || (ch.tvgName != null && !ch.tvgName.isEmpty());
+    }
+
+    private final ChannelListAdapter.CurrentProgramSource channelListProgramSource =
+            new ChannelListAdapter.CurrentProgramSource() {
+                @Nullable
+                @Override
+                public String getCachedCurrentProgram(Channel channel) {
+                    if (!hasEpgKey(channel)) {
+                        return "";
+                    }
+                    return channelListProgramCache.get(channel.id);
+                }
+
+                @Override
+                public void requestCurrentProgram(Channel channel) {
+                    requestChannelListProgram(channel);
+                }
+            };
+
+    private void requestChannelListProgram(Channel ch) {
+        if (!channelListProgramPending.add(ch.id)) {
+            return;
+        }
+        channelListProgramExecutor.execute(() -> {
+            String title = "";
+            long now = System.currentTimeMillis();
+            for (EpgProgram p : epgRepository.getCurrentAndNext(ch.tvgId, ch.tvgName)) {
+                if (now >= p.startTime && now < p.endTime && p.title != null) {
+                    title = p.title;
+                    break;
+                }
+            }
+            final String result = title;
+            runOnUiThread(() -> {
+                channelListProgramPending.remove(ch.id);
+                if (isFinishing()) {
+                    return;
+                }
+                channelListProgramCache.put(ch.id, result);
+                notifyChannelListProgramLoaded(ch.id);
+            });
+        });
+    }
+
+    private void notifyChannelListProgramLoaded(long channelId) {
+        if (channelListAdapter == null) {
+            return;
+        }
+        if (RecyclerViewUpdateGate.postponeIfBusy(channelListOverlay,
+                () -> notifyChannelListProgramLoaded(channelId), channelListOverlay)) {
+            return;
+        }
+        channelListAdapter.notifyCurrentProgramLoaded(channelId);
+    }
+
     /**
      * 解码方式变更：RenderersFactory 只能在构建 ExoPlayer 时指定，必须重建播放器，
      * 重建前后要把本页挂在旧实例上的监听器摘下、重新挂到新实例上。
@@ -1151,6 +1227,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             Set<Long> favIds = new HashSet<>(channelRepository.getAllFavoriteChannelIds());
             runOnUiThread(() -> {
                 currentFavoriteIds = favIds;
+                // 节目随时间变化，每次打开菜单都重新查
+                channelListProgramCache.clear();
                 visibleChannelGroups = buildVisibleChannelGroups(allChannels);
                 selectedChannelGroupIndex = findCurrentChannelGroupIndex();
                 visibleChannels = getChannelsForGroup(visibleChannelGroups.get(selectedChannelGroupIndex));
@@ -1183,7 +1261,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private void updateSelectedGroup(int position, boolean requestChannelFocus) {
         // 分组焦点可能是频道列表回收带焦点行、焦点逃到根节点重新分发时同步落过来的，
-        // 此时两个列表都可能正在布局中，setSelectedIndex 的 notifyDataSetChanged 与
+        // 此时两个列表都可能正在布局中，setSelectedIndex 的 notifyItemChanged 与
         // 下面的 setAdapter 都会抛 IllegalStateException。见 RecyclerViewUpdateGate。
         if (RecyclerViewUpdateGate.postponeIfBusy(channelListOverlay,
                 () -> updateSelectedGroup(position, requestChannelFocus),
@@ -1214,8 +1292,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 channelListOverlay, channelGroupListOverlay)) {
             return;
         }
-        int selectedIndexInGroup = findCurrentChannelIndexInVisibleChannels();
-        ChannelListAdapter adapter = new ChannelListAdapter(visibleChannels, selectedIndexInGroup, currentFavoriteIds, channel -> {
+        int playingIndexInGroup = indexOfCurrentChannelInVisibleChannels();
+        int selectedIndexInGroup = Math.max(0, playingIndexInGroup);
+        // 只给真正在播的那一行打「选中」标记；当前分组里没有在播频道时传 -1，别把第一行标成在播
+        ChannelListAdapter adapter = new ChannelListAdapter(visibleChannels, playingIndexInGroup, currentFavoriteIds, channel -> {
             cancelChannelListIdleHide();
             if (channelListPanel != null) {
                 channelListPanel.setVisibility(View.GONE);
@@ -1234,11 +1314,14 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             toggleFavoriteForChannel(ch);
             return true;
         });
+        adapter.setChannelNumbers(buildChannelNumbers());
+        adapter.setCurrentProgramSource(channelListProgramSource);
+        channelListAdapter = adapter;
         channelListOverlay.setAdapter(adapter);
         if (!visibleChannels.isEmpty()) {
-            Channel target = visibleChannels.get(Math.max(0, selectedIndexInGroup));
+            Channel target = visibleChannels.get(selectedIndexInGroup);
             updateChannelListEpgPanel(target);
-            channelListOverlay.scrollToPosition(Math.max(0, selectedIndexInGroup));
+            channelListOverlay.scrollToPosition(selectedIndexInGroup);
         } else {
             channelListEpgChannelName.setText("");
             channelListEpgContent.setText(getString(R.string.no_epg));
@@ -1315,12 +1398,28 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     }
 
     private int findCurrentChannelIndexInVisibleChannels() {
+        return Math.max(0, indexOfCurrentChannelInVisibleChannels());
+    }
+
+    /** 当前在播频道在 visibleChannels 中的位置，不在当前分组时返回 -1 */
+    private int indexOfCurrentChannelInVisibleChannels() {
         for (int i = 0; i < visibleChannels.size(); i++) {
             if (visibleChannels.get(i).id == currentChannelId) {
                 return i;
             }
         }
-        return 0;
+        return -1;
+    }
+
+    /** 频道 id → 全局频道号（从 1 开始），与数字键换台用的是同一套编号 */
+    private Map<Long, Integer> buildChannelNumbers() {
+        Map<Long, Integer> numbers = new HashMap<>();
+        if (allChannels != null) {
+            for (int i = 0; i < allChannels.size(); i++) {
+                numbers.put(allChannels.get(i).id, i + 1);
+            }
+        }
+        return numbers;
     }
 
     private String normalizeChannelGroup(Channel channel) {
@@ -1671,6 +1770,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         }
         playerManager.release();
         executor.shutdown();
+        channelListProgramExecutor.shutdown();
     }
 
     @Override

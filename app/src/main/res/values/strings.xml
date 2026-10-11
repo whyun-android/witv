@@ -58,6 +58,8 @@
     <string name="current_program">当前播出</string>
     <string name="next_program">即将播出</string>
     <string name="no_epg">暂无节目信息</string>
+    <string name="channel_menu_key_hint">←→ 切换分组/频道　确认：播放　长按：收藏</string>
+    <string name="now_playing_desc">正在播放</string>
     <string name="source_count">播放源 %d 个</string>
     <string name="channel_count">频道 %d 个</string>
     <string name="favorites">我的收藏</string>
