@@ -14,12 +14,15 @@ document.getElementById('addSourceForm').addEventListener('submit', async (e) =>
             body: JSON.stringify({ name: name || url, url })
         });
         if (!res.ok) throw new Error(await res.text());
-        showToast('播放源添加成功，正在加载频道…', 'success');
+        const added = await res.json().catch(() => ({}));
+        showToast(added.isActive
+            ? t('source.added.active')
+            : t('source.added.inactive'), 'success');
         document.getElementById('sourceName').value = '';
         document.getElementById('sourceUrl').value = '';
         setTimeout(loadSources, 2000);
     } catch (err) {
-        showToast('添加失败: ' + err.message, 'error');
+        showToast(t('source.add.failed', { msg: err.message }), 'error');
     }
 });
 
@@ -36,7 +39,7 @@ async function loadSources() {
 function renderSources(sources) {
     const container = document.getElementById('sourceList');
     if (!sources || sources.length === 0) {
-        container.innerHTML = '<p class="empty-hint">暂无播放源</p>';
+        container.innerHTML = `<p class="empty-hint">${t('source.empty')}</p>`;
         document.getElementById('channelSection').style.display = 'none';
         return;
     }
@@ -47,12 +50,12 @@ function renderSources(sources) {
                 <div class="source-name">${escapeHtml(s.name)}</div>
                 <div class="source-url">${escapeHtml(s.url)}</div>
             </div>
-            ${s.isActive ? '<span class="source-status status-active">当前使用</span>' : ''}
+            ${s.isActive ? `<span class="source-status status-active">${t('source.active')}</span>` : ''}
             <div class="source-actions">
-                ${!s.isActive ? `<button class="btn btn-secondary btn-sm" onclick="activateSource(${s.id})">切换</button>` : ''}
-                <button class="btn btn-secondary btn-sm" onclick="reloadSource(${s.id})">刷新</button>
-                <button class="btn btn-secondary btn-sm" onclick="viewChannels(${s.id})">频道</button>
-                <button class="btn btn-danger btn-sm" onclick="deleteSource(${s.id})">删除</button>
+                ${!s.isActive ? `<button class="btn btn-secondary btn-sm" onclick="activateSource(${s.id})">${t('source.activate')}</button>` : ''}
+                <button class="btn btn-secondary btn-sm" onclick="reloadSource(${s.id})">${t('source.reload')}</button>
+                <button class="btn btn-secondary btn-sm" onclick="viewChannels(${s.id})">${t('source.channels')}</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteSource(${s.id})">${t('source.delete')}</button>
             </div>
         </div>
     `).join('');
@@ -66,31 +69,31 @@ function renderSources(sources) {
 async function activateSource(id) {
     try {
         await fetch(`${API}/api/sources/${id}/activate`, { method: 'POST' });
-        showToast('已切换播放源', 'success');
+        showToast(t('source.activated'), 'success');
         loadSources();
     } catch (err) {
-        showToast('切换失败', 'error');
+        showToast(t('source.activate.failed'), 'error');
     }
 }
 
 async function deleteSource(id) {
-    if (!confirm('确定删除此播放源？')) return;
+    if (!confirm(t('source.delete.confirm'))) return;
     try {
         await fetch(`${API}/api/sources/${id}`, { method: 'DELETE' });
-        showToast('已删除', 'success');
+        showToast(t('source.deleted'), 'success');
         loadSources();
     } catch (err) {
-        showToast('删除失败', 'error');
+        showToast(t('source.delete.failed'), 'error');
     }
 }
 
 async function reloadSource(id) {
     try {
         await fetch(`${API}/api/sources/${id}/reload`, { method: 'POST' });
-        showToast('正在重新加载…', 'success');
+        showToast(t('source.reloading'), 'success');
         setTimeout(() => viewChannels(id), 3000);
     } catch (err) {
-        showToast('刷新失败', 'error');
+        showToast(t('source.reload.failed'), 'error');
     }
 }
 
@@ -100,13 +103,13 @@ async function viewChannels(sourceId) {
     const countBadge = document.getElementById('channelCount');
     section.style.display = 'block';
     countBadge.textContent = '';
-    container.innerHTML = '<div class="loading-state"><span class="spinner"></span>正在加载频道列表…</div>';
+    container.innerHTML = `<div class="loading-state"><span class="spinner"></span>${t('channels.loading')}</div>`;
     try {
         const res = await fetch(`${API}/api/sources/${sourceId}/channels`);
         const data = await res.json();
         renderChannels(data);
     } catch (err) {
-        container.innerHTML = '<p class="empty-hint">频道加载失败</p>';
+        container.innerHTML = `<p class="empty-hint">${t('channels.load.failed')}</p>`;
         console.error('Failed to load channels:', err);
     }
 }
@@ -127,7 +130,7 @@ function renderChannels(data) {
     data.groups.forEach(group => {
         const channels = data.channels[group] || [];
         totalChannels += channels.length;
-        const displayGroup = group || '其他';
+        const displayGroup = group || t('channels.group.other');
 
         html += `
             <div>
@@ -140,7 +143,7 @@ function renderChannels(data) {
                             ${ch.logoUrl ? `<img src="${escapeHtml(ch.logoUrl)}" alt="" onerror="this.style.display='none'">` : ''}
                             <span>${escapeHtml(ch.displayName)}</span>
                             <button class="btn-fav ${favoriteIds.has(ch.id) ? 'is-fav' : ''}"
-                                    onclick="event.stopPropagation();toggleFavorite(${ch.id}, this)" title="${favoriteIds.has(ch.id) ? '取消收藏' : '收藏'}">
+                                    onclick="event.stopPropagation();toggleFavorite(${ch.id}, this)" title="${favoriteIds.has(ch.id) ? t('favorite.remove') : t('favorite.add')}">
                                 ${favoriteIds.has(ch.id) ? '★' : '☆'}
                             </button>
                         </div>
@@ -150,7 +153,7 @@ function renderChannels(data) {
         `;
     });
 
-    countBadge.textContent = `共 ${totalChannels} 个频道`;
+    countBadge.textContent = t('channels.count', { n: totalChannels });
     container.innerHTML = html;
     section.style.display = 'block';
 }
@@ -176,12 +179,12 @@ function renderFavorites(channels) {
         return;
     }
 
-    countBadge.textContent = `${channels.length} 个`;
+    countBadge.textContent = t('favorites.count', { n: channels.length });
     container.innerHTML = channels.map(ch => `
         <div class="channel-item">
             ${ch.logoUrl ? `<img src="${escapeHtml(ch.logoUrl)}" alt="" onerror="this.style.display='none'">` : ''}
             <span>${escapeHtml(ch.displayName)}</span>
-            <button class="btn-fav is-fav" onclick="toggleFavorite(${ch.id}, this)" title="取消收藏">★</button>
+            <button class="btn-fav is-fav" onclick="toggleFavorite(${ch.id}, this)" title="${t('favorite.remove')}">★</button>
         </div>
     `).join('');
     section.style.display = 'block';
@@ -193,20 +196,20 @@ async function toggleFavorite(channelId, btn) {
         if (isFav) {
             await fetch(`${API}/api/favorites/${channelId}`, { method: 'DELETE' });
             favoriteIds.delete(channelId);
-            showToast('已取消收藏', 'success');
+            showToast(t('favorite.removed'), 'success');
         } else {
             await fetch(`${API}/api/favorites/${channelId}`, { method: 'POST' });
             favoriteIds.add(channelId);
-            showToast('已添加到收藏', 'success');
+            showToast(t('favorite.added'), 'success');
         }
         if (btn) {
             btn.className = `btn-fav ${favoriteIds.has(channelId) ? 'is-fav' : ''}`;
             btn.textContent = favoriteIds.has(channelId) ? '★' : '☆';
-            btn.title = favoriteIds.has(channelId) ? '取消收藏' : '收藏';
+            btn.title = favoriteIds.has(channelId) ? t('favorite.remove') : t('favorite.add');
         }
         loadFavorites();
     } catch (err) {
-        showToast('操作失败', 'error');
+        showToast(t('favorite.failed'), 'error');
     }
 }
 
@@ -214,7 +217,7 @@ async function loadSettings() {
     try {
         const res = await fetch(`${API}/api/settings`);
         const settings = await res.json();
-        document.getElementById('epgUrl').value = settings.epgUrl || '';
+        renderEpgSettings(settings);
         document.getElementById('udpxyProxyBase').value = settings.udpxyProxyBase || '';
         renderUdpxyPreview(settings.udpxyProxyBase || '');
     } catch (err) {
@@ -227,27 +230,77 @@ function renderUdpxyPreview(base) {
     const el = document.getElementById('udpxyPreview');
     if (!el) return;
     el.textContent = base
-        ? `udp:// 和 rtp:// 频道将改走：rtp://239.1.1.1:1234 → ${base}/rtp/239.1.1.1:1234`
-        : '未配置，udp:// 和 rtp:// 频道直接收组播（需设备所在网络能收到运营商组播）';
+        ? t('settings.udpxy.preview', { base })
+        : t('settings.udpxy.none');
+}
+
+// 最近一次从后端拿到的 EPG 设置，切换开关时用来重算「使用中」标记
+let epgSettings = { epgUrl: '', m3uEpgUrl: '', customEpgUrl: '', useCustomEpg: false, hasActiveSource: false };
+
+// 两个候选地址并列，实际生效的那个标「使用中」。开关选中的一侧为空时后端会退回另一侧，这里照实提示
+function renderEpgSettings(s) {
+    epgSettings = Object.assign(epgSettings, s || {});
+    const { epgUrl, m3uEpgUrl, customEpgUrl, useCustomEpg, hasActiveSource } = epgSettings;
+    const m3uEl = document.getElementById('m3uEpgUrl');
+    m3uEl.textContent = m3uEpgUrl || t('settings.epg.m3u.none');
+    m3uEl.classList.toggle('is-empty', !m3uEpgUrl);
+    const customInput = document.getElementById('customEpgUrl');
+    if (document.activeElement !== customInput) {
+        customInput.value = customEpgUrl || '';
+    }
+    document.getElementById('useCustomEpg').checked = !!useCustomEpg;
+
+    const usingCustom = !!epgUrl && (useCustomEpg ? epgUrl === customEpgUrl : epgUrl !== m3uEpgUrl);
+    const usingM3u = !!epgUrl && !usingCustom;
+    document.getElementById('epgOptionCustom').classList.toggle('in-use', usingCustom);
+    document.getElementById('epgOptionM3u').classList.toggle('in-use', usingM3u);
+
+    const hint = document.getElementById('epgEffectiveHint');
+    if (!hasActiveSource) {
+        hint.textContent = t('settings.epg.noSource');
+    } else if (!epgUrl) {
+        hint.textContent = t('settings.epg.none');
+    } else if (useCustomEpg && !usingCustom) {
+        hint.textContent = t('settings.epg.fallbackM3u');
+    } else if (!useCustomEpg && usingCustom) {
+        hint.textContent = t('settings.epg.fallbackCustom');
+    } else {
+        hint.textContent = '';
+    }
+}
+
+// 开关切了就立即生效，不用再点保存
+function onEpgSwitchChange() {
+    const toggle = document.getElementById('useCustomEpg');
+    const customInput = document.getElementById('customEpgUrl');
+    if (toggle.checked && !customInput.value.trim()) {
+        toggle.checked = false;
+        customInput.focus();
+        showToast(t('settings.epg.customMissing'), 'error');
+        return;
+    }
+    saveSettings();
 }
 
 async function saveSettings() {
-    const epgUrl = document.getElementById('epgUrl').value.trim();
+    const customEpgUrl = document.getElementById('customEpgUrl').value.trim();
+    const useCustomEpg = document.getElementById('useCustomEpg').checked;
     const udpxyProxyBase = document.getElementById('udpxyProxyBase').value.trim();
     try {
         const res = await fetch(`${API}/api/settings`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json; charset=utf-8' },
-            body: JSON.stringify({ epgUrl, udpxyProxyBase })
+            body: JSON.stringify({ customEpgUrl, useCustomEpg, udpxyProxyBase })
         });
         const data = await res.json();
+        renderEpgSettings({ epgUrl: data.epgUrl || '', customEpgUrl, useCustomEpg });
         // 后端会规范化（补 scheme、去掉末尾 / 和 /udp /rtp），回填实际生效的值
         const normalized = data.udpxyProxyBase || '';
         document.getElementById('udpxyProxyBase').value = normalized;
         renderUdpxyPreview(normalized);
-        showToast('设置已保存', 'success');
+        showToast(data.epgRefreshing ? t('settings.saved.epgRefreshing') : t('settings.saved'), 'success');
     } catch (err) {
-        showToast('保存失败', 'error');
+        showToast(t('settings.save.failed'), 'error');
     }
 }
 
@@ -256,12 +309,13 @@ async function reloadEpg() {
         const res = await fetch(`${API}/api/epg/reload`, { method: 'POST' });
         const data = await res.json();
         if (data.error) {
-            showToast(data.error, 'error');
+            // 后端错误信息是英文，已知的那条换成当前语言的文案
+            showToast(data.error === 'No EPG URL configured' ? t('epg.url.missing') : data.error, 'error');
         } else {
-            showToast('EPG 正在刷新…', 'success');
+            showToast(t('epg.refreshing'), 'success');
         }
     } catch (err) {
-        showToast('EPG 刷新失败', 'error');
+        showToast(t('epg.refresh.failed'), 'error');
     }
 }
 
@@ -296,7 +350,7 @@ async function showEpg(channelId, channelName) {
     const body = document.getElementById('epgModalBody');
 
     title.textContent = channelName;
-    body.innerHTML = '<div class="loading-state"><span class="spinner"></span>正在加载节目信息…</div>';
+    body.innerHTML = `<div class="loading-state"><span class="spinner"></span>${t('epg.loading')}</div>`;
     modal.classList.add('show');
 
     try {
@@ -304,7 +358,7 @@ async function showEpg(channelId, channelName) {
         const data = await res.json();
         const programs = data.programs || [];
         if (programs.length === 0) {
-            body.innerHTML = '<p class="epg-empty">暂无节目信息</p>';
+            body.innerHTML = `<p class="epg-empty">${t('epg.empty')}</p>`;
             return;
         }
         const fmt = ts => {
@@ -316,9 +370,9 @@ async function showEpg(channelId, channelName) {
         const nextIdx = curIdx === -1 ? 0 : curIdx + 1;
 
         function epgLabel(i) {
-            if (i === curIdx) return '当前播出';
-            if (i === nextIdx) return '即将播出';
-            return '后续';
+            if (i === curIdx) return t('epg.now');
+            if (i === nextIdx) return t('epg.next');
+            return t('epg.later');
         }
 
         const rows = programs.map((p, i) => {
@@ -336,15 +390,15 @@ async function showEpg(channelId, channelName) {
         const cap = data.limit != null ? data.limit : EPG_LIST_LIMIT;
         let footerText;
         if (programs.length >= cap) {
-            footerText = `已显示 ${cap} 条未结束节目（已达本页上限，数据库中可能还有更多）`;
+            footerText = t('epg.footer.capped', { n: cap });
         } else {
-            footerText = `共 ${programs.length} 条未结束节目`;
+            footerText = t('epg.footer.total', { n: programs.length });
         }
         const footer = `<p class="epg-footer">${footerText}</p>`;
 
         body.innerHTML = rows + footer;
     } catch (err) {
-        body.innerHTML = '<p class="epg-empty">节目信息加载失败</p>';
+        body.innerHTML = `<p class="epg-empty">${t('epg.load.failed')}</p>`;
     }
 }
 

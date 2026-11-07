@@ -2,6 +2,7 @@ package com.whyun.witv.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.graphics.Color;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
@@ -19,13 +20,14 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.whyun.witv.BuildConfig;
 import com.whyun.witv.R;
+import com.whyun.witv.data.AppLanguage;
+import com.whyun.witv.data.AppTheme;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.player.PlaybackDecoderMode;
 import com.whyun.witv.server.DeviceIpUtil;
@@ -61,6 +63,8 @@ public class SettingsCollapsibleFragment extends Fragment
     public static final int CAT_SOURCE_TIMEOUT = 6;
     public static final int CAT_MULTICAST = 7;
     public static final int CAT_DECODER = 8;
+    public static final int CAT_LANGUAGE = 9;
+    public static final int CAT_THEME = 10;
 
     private SettingsPanelHost host;
 
@@ -430,6 +434,10 @@ public class SettingsCollapsibleFragment extends Fragment
                 ctx.getString(R.string.settings_group_multicast)));
         items.add(new SettingsMainMenuAdapter.Item(CAT_DECODER,
                 ctx.getString(R.string.settings_group_decoder)));
+        items.add(new SettingsMainMenuAdapter.Item(CAT_THEME,
+                ctx.getString(R.string.settings_group_theme)));
+        items.add(new SettingsMainMenuAdapter.Item(CAT_LANGUAGE,
+                ctx.getString(R.string.settings_group_language)));
         items.add(new SettingsMainMenuAdapter.Item(CAT_HELP,
                 ctx.getString(R.string.settings_help_title)));
         mainMenuAdapter.setItems(items);
@@ -600,6 +608,32 @@ public class SettingsCollapsibleFragment extends Fragment
                 }
                 break;
             }
+            case CAT_THEME: {
+                AppTheme currentTheme = preferenceManager.getAppTheme();
+                rows.add(new SettingsPanelAdapter.ThemeRow(AppTheme.STANDARD,
+                        ctx.getString(R.string.theme_standard),
+                        ctx.getString(R.string.theme_standard_desc),
+                        currentTheme == AppTheme.STANDARD));
+                rows.add(new SettingsPanelAdapter.ThemeRow(AppTheme.BROADCAST,
+                        ctx.getString(R.string.theme_broadcast),
+                        ctx.getString(R.string.theme_broadcast_desc),
+                        currentTheme == AppTheme.BROADCAST));
+                break;
+            }
+            case CAT_LANGUAGE: {
+                AppLanguage currentLang = preferenceManager.getAppLanguage();
+                rows.add(new SettingsPanelAdapter.LanguageRow(AppLanguage.SYSTEM,
+                        ctx.getString(R.string.language_system),
+                        ctx.getString(R.string.language_system_desc),
+                        currentLang == AppLanguage.SYSTEM));
+                rows.add(new SettingsPanelAdapter.LanguageRow(AppLanguage.CHINESE,
+                        ctx.getString(R.string.language_chinese), null,
+                        currentLang == AppLanguage.CHINESE));
+                rows.add(new SettingsPanelAdapter.LanguageRow(AppLanguage.ENGLISH,
+                        ctx.getString(R.string.language_english), null,
+                        currentLang == AppLanguage.ENGLISH));
+                break;
+            }
             case CAT_HELP:
                 if (host.shouldShowPlaybackMediaInfoHelp()) {
                     rows.add(new SettingsPanelAdapter.HelpSubRow(
@@ -620,7 +654,7 @@ public class SettingsCollapsibleFragment extends Fragment
     }
 
     private static String buildWebHint(Context ctx) {
-        return String.format(Locale.US, "通过浏览器管理：%s", buildWebUrl(ctx));
+        return ctx.getString(R.string.web_hint_format, buildWebUrl(ctx));
     }
 
     private static String buildWebUrl(Context ctx) {
@@ -678,7 +712,7 @@ public class SettingsCollapsibleFragment extends Fragment
 
         TextView body = new TextView(ctx);
         body.setText(R.string.settings_help_body);
-        body.setTextColor(ContextCompat.getColor(ctx, R.color.text_primary));
+        body.setTextColor(ThemeColors.get(ctx, R.attr.witvTextPrimary));
         body.setTextSize(15);
         body.setPadding(pad, pad, pad, pad);
         body.setLineSpacing(0, 1.35f);
@@ -686,7 +720,8 @@ public class SettingsCollapsibleFragment extends Fragment
 
         LinearLayout outer = new LinearLayout(ctx);
         outer.setOrientation(LinearLayout.VERTICAL);
-        outer.setBackgroundColor(ContextCompat.getColor(ctx, R.color.card_bg));
+        // 弹窗底色由主题的 dialog_bg 提供，这里不再叠一层
+        outer.setBackgroundColor(Color.TRANSPARENT);
         outer.addView(scrollView);
 
         new AlertDialog.Builder(ctx)
@@ -722,7 +757,7 @@ public class SettingsCollapsibleFragment extends Fragment
                 e.printStackTrace();
             }
             runOnUiThreadIfAdded(() -> {
-                Toast.makeText(requireContext(), "已切换到: " + source.name, Toast.LENGTH_SHORT).show();
+                Toast.makeText(requireContext(), getString(R.string.source_switched_to, source.name), Toast.LENGTH_SHORT).show();
                 host.onActiveM3USourceChanged(source.id);
                 refreshDataFromDb();
             });
@@ -734,11 +769,16 @@ public class SettingsCollapsibleFragment extends Fragment
         executor.execute(() -> {
             M3USource active = db.m3uSourceDao().getActive();
             if (active != null) {
-                active.epgUrl = url;
+                // 遥控器上手动填地址 = 填自定义地址并切到自定义；清空则退回直播源内的地址
+                String custom = url != null ? url.trim() : "";
+                active.customEpgUrl = custom.isEmpty() ? null : custom;
+                active.useCustomEpg = !custom.isEmpty();
+                active.applyEffectiveEpgUrl();
                 db.m3uSourceDao().update(active);
+                final String effective = active.epgUrl != null ? active.epgUrl : "";
                 runOnUiThreadIfAdded(() -> {
-                    cachedEpgUrl = url;
-                    Toast.makeText(requireContext(), "EPG 设置已保存", Toast.LENGTH_SHORT).show();
+                    cachedEpgUrl = effective;
+                    Toast.makeText(requireContext(), R.string.epg_saved, Toast.LENGTH_SHORT).show();
                 });
             }
         });
@@ -750,20 +790,22 @@ public class SettingsCollapsibleFragment extends Fragment
             M3USource active = db.m3uSourceDao().getActive();
             if (active != null && active.epgUrl != null && !active.epgUrl.isEmpty()) {
                 runOnUiThreadIfAdded(() ->
-                        Toast.makeText(requireContext(), "正在刷新 EPG…", Toast.LENGTH_SHORT).show());
-                try {
-                    epgRepository.loadEpg(active.epgUrl);
-                    preferenceManager.markEpgAutoRefreshSuccess(active.epgUrl);
+                        Toast.makeText(requireContext(), R.string.epg_refreshing, Toast.LENGTH_SHORT).show());
+                // 用户主动触发：强制刷新，忽略节流。失败在 EpgRepository 内部打 WiTVEpg 日志，
+                // 这里只负责把结果反馈给用户
+                EpgRepository.RefreshResult result = epgRepository.refreshIfStale(active.epgUrl, true);
+                if (result.success) {
                     runOnUiThreadIfAdded(() ->
-                            Toast.makeText(requireContext(), "EPG 刷新完成", Toast.LENGTH_SHORT).show());
-                } catch (Exception e) {
+                            Toast.makeText(requireContext(), R.string.epg_refresh_done, Toast.LENGTH_SHORT).show());
+                } else {
+                    String reason = result.errorMessage != null ? result.errorMessage : "";
                     runOnUiThreadIfAdded(() ->
-                            Toast.makeText(requireContext(), "EPG 刷新失败: " + e.getMessage(),
+                            Toast.makeText(requireContext(), getString(R.string.epg_refresh_failed, reason),
                                     Toast.LENGTH_LONG).show());
                 }
             } else {
                 runOnUiThreadIfAdded(() ->
-                        Toast.makeText(requireContext(), "请先设置 EPG 地址", Toast.LENGTH_SHORT).show());
+                        Toast.makeText(requireContext(), R.string.epg_url_missing, Toast.LENGTH_SHORT).show());
             }
         });
     }
@@ -778,7 +820,7 @@ public class SettingsCollapsibleFragment extends Fragment
     public void onAutoPlay(boolean checked) {
         preferenceManager.setAutoPlayLast(checked);
         Toast.makeText(requireContext(),
-                checked ? "已开启启动播放上次频道" : "已关闭启动播放上次频道",
+                checked ? R.string.auto_play_last_on : R.string.auto_play_last_off,
                 Toast.LENGTH_SHORT).show();
     }
 
@@ -786,7 +828,7 @@ public class SettingsCollapsibleFragment extends Fragment
     public void onLoadSpeed(boolean checked) {
         preferenceManager.setShowLoadSpeedOverlay(checked);
         Toast.makeText(requireContext(),
-                checked ? "已开启播放页加载速度显示" : "已关闭播放页加载速度显示",
+                checked ? R.string.load_speed_overlay_on : R.string.load_speed_overlay_off,
                 Toast.LENGTH_SHORT).show();
         host.onPlaybackOverlayPreferenceChanged();
     }
@@ -795,7 +837,7 @@ public class SettingsCollapsibleFragment extends Fragment
     public void onRefreshM3uOnStartup(boolean checked) {
         preferenceManager.setRefreshM3uOnStartup(checked);
         Toast.makeText(requireContext(),
-                checked ? "已开启启动时刷新 M3U 直播源" : "已关闭启动时刷新 M3U 直播源",
+                checked ? R.string.refresh_m3u_on_startup_on : R.string.refresh_m3u_on_startup_off,
                 Toast.LENGTH_SHORT).show();
     }
 
@@ -803,7 +845,7 @@ public class SettingsCollapsibleFragment extends Fragment
     public void onUseDiskCacheForLiveTs(boolean checked) {
         preferenceManager.setUseDiskCacheForLiveTs(checked);
         Toast.makeText(requireContext(),
-                checked ? "已开启直播分片硬盘缓存" : "已关闭直播分片硬盘缓存",
+                checked ? R.string.disk_cache_on : R.string.disk_cache_off,
                 Toast.LENGTH_SHORT).show();
     }
 
@@ -811,7 +853,7 @@ public class SettingsCollapsibleFragment extends Fragment
     public void onReverseChannelKeys(boolean checked) {
         preferenceManager.setReverseChannelKeys(checked);
         Toast.makeText(requireContext(),
-                checked ? "已开启反转换台键" : "已关闭反转换台键",
+                checked ? R.string.reverse_channel_keys_on : R.string.reverse_channel_keys_off,
                 Toast.LENGTH_SHORT).show();
     }
 
@@ -837,6 +879,27 @@ public class SettingsCollapsibleFragment extends Fragment
                 Toast.LENGTH_SHORT).show();
         host.onSourceSwitchTimeoutChanged();
         rebuildSubmenuIfOpen();
+    }
+
+    @Override
+    public void onAppTheme(AppTheme theme) {
+        if (theme == preferenceManager.getAppTheme()) {
+            return;
+        }
+        preferenceManager.setAppTheme(theme);
+        // 与切换语言相同：重建当前 Activity；栈里的播放页在 onResume 时自行检测并重建
+        requireActivity().recreate();
+    }
+
+    @Override
+    public void onAppLanguage(AppLanguage language) {
+        if (language == preferenceManager.getAppLanguage()) {
+            return;
+        }
+        preferenceManager.setAppLanguage(language);
+        // 新语言在 attachBaseContext 中生效，重建当前 Activity；
+        // 栈里其他 Activity（如设置页下面的播放页）在 onResume 时自行检测并重建
+        requireActivity().recreate();
     }
 
     /** FFmpeg 原生库是否可加载；加载失败不应让设置页崩溃。 */

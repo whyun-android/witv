@@ -1,5 +1,7 @@
 package com.whyun.witv.ui;
 
+import com.whyun.witv.data.AppLanguage;
+import android.content.Context;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.media.MediaCodecList;
@@ -11,11 +13,14 @@ import android.net.NetworkRequest;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.TypedValue;
 import android.view.KeyEvent;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ImageView;
@@ -30,8 +35,8 @@ import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 import androidx.media3.common.Player;
 import androidx.media3.common.Tracks;
@@ -44,6 +49,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
 import com.whyun.witv.R;
 import com.whyun.witv.WiTVApp;
+import com.whyun.witv.data.AppTheme;
 import com.whyun.witv.data.PreferenceManager;
 import com.whyun.witv.data.db.AppDatabase;
 import com.whyun.witv.server.DeviceIpUtil;
@@ -59,6 +65,7 @@ import com.whyun.witv.player.PlayerManager;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.text.SimpleDateFormat;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -72,9 +79,16 @@ import java.util.concurrent.Executors;
 
 public class PlayerActivity extends FragmentActivity implements PlayerManager.Callback,
         SettingsPanelHost, WiTVApp.SourceChangeListener {
-    private static final String CHANNEL_GROUP_FAVORITES = "我的收藏";
-    private static final String CHANNEL_GROUP_ALL = "全部频道";
-    private static final String CHANNEL_GROUP_UNCATEGORIZED = "未分类";
+    // 分组名随界面语言变化；切换语言会重建 Activity，因此在 onCreate 中按当前语言取值
+    private String CHANNEL_GROUP_FAVORITES;
+    private String CHANNEL_GROUP_ALL;
+    private String CHANNEL_GROUP_UNCATEGORIZED;
+    /** 由 recreate()（如切换语言）重建而非冷启动 */
+    private boolean recreatedFromSavedState;
+    /** 本实例创建时生效的界面语言 */
+    private AppLanguage appliedLanguage;
+    /** 本实例创建时生效的界面主题 */
+    private AppTheme appliedTheme;
 
     public static final String EXTRA_CHANNEL_ID = "channel_id";
     public static final String EXTRA_SOURCE_ID = "source_id";
@@ -97,6 +111,10 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private TextView mediaInfoVideoColumn;
     private TextView mediaInfoAudioColumn;
     private TextView switchingToast;
+    private View bufferingIndicator;
+    private View playbackFailedCard;
+    private TextView playbackFailedDetail;
+    private Button playbackRetryButton;
     private TextView loadSpeedOverlay;
     private View channelListPanel;
     private RecyclerView channelGroupListOverlay;
@@ -109,7 +127,13 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private final Set<Long> channelListProgramPending = new HashSet<>();
     private TextView channelListEpgChannelName;
     private TextView channelListEpgContent;
+    private TextView channelListEpgDate;
+    private LinearLayout channelListEpgList;
+    private ScrollView channelListEpgScroll;
     private int channelListEpgLoadSeq = 0;
+    /** 主题决定的当前节目样式：true=整块高亮（见 witvEpgCurrentStyle） */
+    @Nullable
+    private Boolean epgCurrentIsBlock;
     private View settingsPanelOverlay;
     private PlayerView playerView;
     private Button refreshWebHintButton;
@@ -140,6 +164,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private boolean startupRefreshSucceeded;
     private boolean allSourcesFailedShowing;
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
+    /** 节目单列顶部那行日期（今天 · 11月7日 星期六） */
+    private final SimpleDateFormat dayFormat = new SimpleDateFormat("M月d日 EEEE", Locale.CHINA);
 
     private boolean overlayVisible = false;
     // 只收起底部信息条：换台/启动后 5 秒内用户可能已经打开了频道菜单，不能连菜单一起关掉
@@ -160,6 +186,21 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     private static volatile boolean codecListReady;
     /** 预热超过这么久才提示「等待系统解码服务」，正常情况下几十毫秒就返回，不闪提示 */
     private static final long CODEC_WARMUP_HINT_DELAY_MS = 800L;
+    /** 缓冲持续这么久才显示「缓冲中」，起播和正常的短暂缓冲不闪提示 */
+    private static final long BUFFERING_HINT_DELAY_MS = 600L;
+    private final Runnable showBufferingRunnable = () -> {
+        ExoPlayer exo = playerManager != null ? playerManager.getPlayer() : null;
+        if (exo == null || exo.getPlaybackState() != Player.STATE_BUFFERING) {
+            return;
+        }
+        // 正在换源、播放失败或在空状态时，已有更具体的提示，不再叠一层
+        if (switchingToast.getVisibility() == View.VISIBLE
+                || allSourcesFailedShowing
+                || (emptyState != null && emptyState.getVisibility() == View.VISIBLE)) {
+            return;
+        }
+        bufferingIndicator.setVisibility(View.VISIBLE);
+    };
     private final Runnable codecWarmupHintRunnable = () -> {
         switchingToast.setText(R.string.waiting_for_codec_service);
         switchingToast.setVisibility(View.VISIBLE);
@@ -173,9 +214,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (channelListPanel != null) {
             channelListPanel.setVisibility(View.GONE);
         }
-        if (playerView != null) {
-            playerView.requestFocus();
-        }
+        restoreFocusAfterPanelClosed();
     };
 
     private final Runnable loadSpeedRefreshRunnable = new Runnable() {
@@ -202,6 +241,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         @Override
         public void onPlaybackStateChanged(int playbackState) {
             postUpdateLoadSpeedOverlay();
+            updateBufferingIndicator(playbackState);
         }
     };
 
@@ -219,17 +259,37 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     };
 
     @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(AppLanguage.wrap(newBase));
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // 主题必须在 super.onCreate 之前设置，否则已创建的窗口和视图不会用新主题
+        PreferenceManager startupPrefs = new PreferenceManager(this);
+        appliedTheme = startupPrefs.getAppTheme();
+        setTheme(appliedTheme.getStyleRes());
         super.onCreate(savedInstanceState);
         PlayerActivity previous = liveInstance != null ? liveInstance.get() : null;
         liveInstance = new WeakReference<>(this);
         if (previous != null && previous != this && !previous.isFinishing()) {
             previous.finishAndRemoveTask();
         }
+        recreatedFromSavedState = savedInstanceState != null;
+        appliedLanguage = startupPrefs.getAppLanguage();
+        CHANNEL_GROUP_FAVORITES = getString(R.string.favorites);
+        CHANNEL_GROUP_ALL = getString(R.string.channel_group_all);
+        CHANNEL_GROUP_UNCATEGORIZED = getString(R.string.channel_group_uncategorized);
+        MediaInfoFormatter.setChinese(AppLanguage.isChinese(this));
         setContentView(R.layout.activity_player);
 
         currentChannelId = getIntent().getLongExtra(EXTRA_CHANNEL_ID, -1);
         sourceId = getIntent().getLongExtra(EXTRA_SOURCE_ID, -1);
+        if (savedInstanceState != null) {
+            // 重建时继续播放正在看的频道，而不是启动 Intent 里的频道
+            currentChannelId = savedInstanceState.getLong(EXTRA_CHANNEL_ID, currentChannelId);
+            sourceId = savedInstanceState.getLong(EXTRA_SOURCE_ID, sourceId);
+        }
 
         initViews();
         initPlayer();
@@ -341,12 +401,29 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         channelListOverlay = findViewById(R.id.channel_list_overlay);
         channelListEpgChannelName = findViewById(R.id.channel_list_epg_channel_name);
         channelListEpgContent = findViewById(R.id.channel_list_epg_content);
+        channelListEpgDate = findViewById(R.id.channel_list_epg_date);
+        channelListEpgList = findViewById(R.id.channel_list_epg_list);
         // ScrollView 构造时会强制 setFocusable(true)，XML 里关不掉；不关的话频道列表按右键
         // 焦点会落到这里，之后返回键直接关掉整个菜单，而不是先回到频道列表
-        ScrollView channelListEpgScroll = findViewById(R.id.channel_list_epg_scroll);
+        channelListEpgScroll = findViewById(R.id.channel_list_epg_scroll);
         channelListEpgScroll.setFocusable(false);
         channelListEpgScroll.setFocusableInTouchMode(false);
         refreshWebHintButton = findViewById(R.id.btn_refresh_web_hint);
+        bufferingIndicator = findViewById(R.id.buffering_indicator);
+        playbackFailedCard = findViewById(R.id.playback_failed_card);
+        playbackFailedDetail = findViewById(R.id.playback_failed_detail);
+        playbackRetryButton = findViewById(R.id.btn_playback_retry);
+        playbackRetryButton.setOnClickListener(v -> {
+            if (currentChannel != null) {
+                playChannel(currentChannel);
+            }
+        });
+        findViewById(R.id.btn_playback_next_channel).setOnClickListener(v -> switchChannel(1));
+        findViewById(R.id.btn_playback_channel_list).setOnClickListener(v -> {
+            // 只是暂时让出画面中央；菜单关掉而没换台时，失败卡片会回来
+            playbackFailedCard.setVisibility(View.GONE);
+            showChannelList();
+        });
         channelGroupListOverlay.setLayoutManager(new LinearLayoutManager(this));
         channelListOverlay.setLayoutManager(new LinearLayoutManager(this));
         refreshWebHintButton.setOnClickListener(v -> reloadInitialChannel());
@@ -491,7 +568,9 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
      * 这段时间画面不出、频道菜单也打不开。缓存为空（首次使用）时才等刷新结果再播。
      */
     private void loadAndPlay() {
-        final boolean refresh = preferenceManager.isRefreshM3uOnStartupEnabled();
+        // 切换语言等原因重建 Activity 时不算「启动」，不重复刷新 M3U
+        final boolean refresh = !recreatedFromSavedState
+                && preferenceManager.isRefreshM3uOnStartupEnabled();
         executor.execute(() -> {
             boolean played = loadCachedChannelsAndPlay(!refresh);
             if (!refresh) {
@@ -702,6 +781,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             playerView.setVisibility(show ? View.GONE : View.VISIBLE);
         }
         if (show) {
+            // 没有频道可播时，上一个频道的失败卡片已无意义
+            dismissAllSourcesFailedToast();
             updateWebAddress();
             if (refreshWebHintButton != null) {
                 refreshWebHintButton.post(refreshWebHintButton::requestFocus);
@@ -811,8 +892,51 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     /** 用户切换频道或重新发起播放时关闭「所有源失败」等常驻提示；成功开播时仍由 onPlaybackStarted 处理。 */
     private void dismissAllSourcesFailedToast() {
+        boolean cardHadFocus = playbackFailedCard.getVisibility() == View.VISIBLE
+                && playbackFailedCard.hasFocus();
         allSourcesFailedShowing = false;
         switchingToast.setVisibility(View.GONE);
+        playbackFailedCard.setVisibility(View.GONE);
+        if (cardHadFocus && playerView != null) {
+            playerView.requestFocus();
+        }
+    }
+
+    private void showPlaybackFailedCard() {
+        int total = playerManager != null ? playerManager.getSourceCount() : 0;
+        playbackFailedDetail.setText(total > 1
+                ? getString(R.string.playback_failed_detail_multi, total)
+                : getString(R.string.playback_failed_detail_single));
+        switchingToast.setVisibility(View.GONE);
+        handler.removeCallbacks(showBufferingRunnable);
+        bufferingIndicator.setVisibility(View.GONE);
+        if (emptyState != null && emptyState.getVisibility() == View.VISIBLE) {
+            return;
+        }
+        if (isChannelListPanelVisible() || isSettingsPanelVisible()) {
+            // 用户正在菜单里操作，先不抢焦点；菜单关闭时由 restoreFocusAfterPanelClosed 补上
+            return;
+        }
+        playbackFailedCard.setVisibility(View.VISIBLE);
+        playbackRetryButton.post(playbackRetryButton::requestFocus);
+    }
+
+    /** 频道菜单收起后把焦点还回去：频道还在失败状态就回到失败卡片，否则回到播放画面。 */
+    private void restoreFocusAfterPanelClosed() {
+        if (allSourcesFailedShowing) {
+            showPlaybackFailedCard();
+        } else if (playerView != null) {
+            playerView.requestFocus();
+        }
+    }
+
+    private void updateBufferingIndicator(int playbackState) {
+        handler.removeCallbacks(showBufferingRunnable);
+        if (playbackState == Player.STATE_BUFFERING) {
+            handler.postDelayed(showBufferingRunnable, BUFFERING_HINT_DELAY_MS);
+        } else {
+            bufferingIndicator.setVisibility(View.GONE);
+        }
     }
 
     private void updateChannelInfo() {
@@ -825,7 +949,12 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             Glide.with(this)
                     .asBitmap()
                     .load(currentChannel.logoUrl)
+                    .placeholder(R.drawable.app_banner)
                     .into(channelLogoView);
+        } else {
+            // 与频道菜单一致：没有台标时显示默认图，不能沿用上一个频道的台标
+            Glide.with(this).clear(channelLogoView);
+            channelLogoView.setImageResource(R.drawable.app_banner);
         }
 
         loadEpgInfo();
@@ -964,8 +1093,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             channelListPanel.setVisibility(View.GONE);
         }
         overlayVisible = false;
-        if (!isSettingsPanelVisible() && playerView != null) {
-            playerView.requestFocus();
+        if (!isSettingsPanelVisible()) {
+            restoreFocusAfterPanelClosed();
         }
     }
 
@@ -978,22 +1107,136 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             return;
         }
         channelListEpgChannelName.setText(ch.displayName);
+        if (channelListEpgList != null) {
+            channelListEpgList.removeAllViews();
+        }
+        if (channelListEpgDate != null) {
+            channelListEpgDate.setText(getString(R.string.epg_today, dayFormat.format(new Date())));
+            channelListEpgDate.setVisibility(View.VISIBLE);
+        }
         if (!hasEpgKey(ch)) {
             channelListEpgContent.setText(getString(R.string.no_epg));
+            channelListEpgContent.setVisibility(View.VISIBLE);
             return;
         }
-        channelListEpgContent.setText(getString(R.string.loading));
+        // 本地查询很快：加载期间先留白，不要先给一条「加载中」，否则切台时会与
+        // 「暂无节目信息」来回跳一次（看起来就是在闪）。
+        channelListEpgContent.setText("");
+        channelListEpgContent.setVisibility(View.GONE);
         final int seq = ++channelListEpgLoadSeq;
         executor.execute(() -> {
-            List<EpgProgram> programs = epgRepository.getUpcomingPrograms(ch.tvgId, ch.tvgName, 12);
-            final CharSequence text = buildChannelListEpgText(programs);
+            long[] range = todayRange();
+            List<EpgProgram> programs =
+                    epgRepository.getDayPrograms(ch.tvgId, ch.tvgName, range[0], range[1]);
             runOnUiThread(() -> {
-                if (isFinishing() || channelListEpgContent == null || seq != channelListEpgLoadSeq) {
+                if (isFinishing() || channelListEpgList == null || seq != channelListEpgLoadSeq) {
                     return;
                 }
-                channelListEpgContent.setText(text);
+                if (programs == null || programs.isEmpty()) {
+                    channelListEpgContent.setText(getString(R.string.no_epg));
+                    channelListEpgContent.setVisibility(View.VISIBLE);
+                    return;
+                }
+                channelListEpgContent.setVisibility(View.GONE);
+                inflateChannelListEpgRows(programs);
             });
         });
+    }
+
+    /**
+     * 当天的节目列表：一行一个节目，当前节目原位高亮。
+     * 电视包装主题还会给当前节目加金色「正在播出」牌与进度条（见 witvEpgCurrentStyle）。
+     */
+    private void inflateChannelListEpgRows(List<EpgProgram> programs) {
+        channelListEpgList.removeAllViews();
+        LayoutInflater inflater = LayoutInflater.from(this);
+        long now = System.currentTimeMillis();
+        View currentRow = null;
+        for (EpgProgram p : programs) {
+            View row = inflater.inflate(R.layout.item_epg_program, channelListEpgList, false);
+            TextView timeView = row.findViewById(R.id.epg_program_time);
+            TextView titleView = row.findViewById(R.id.epg_program_title);
+            TextView badgeView = row.findViewById(R.id.epg_program_badge);
+            View progressRow = row.findViewById(R.id.epg_program_progress_row);
+
+            timeView.setText(timeFormat.format(new Date(p.startTime)));
+            titleView.setText(p.title != null ? p.title : "");
+
+            if (now >= p.endTime) {
+                // 已经播完的压暗，视线自然落到当前节目
+                timeView.setAlpha(0.55f);
+                titleView.setAlpha(0.55f);
+            }
+            if (now >= p.startTime && now < p.endTime) {
+                titleView.setTypeface(null, Typeface.BOLD);
+                if (!isEpgCurrentBlock()) {
+                    // 标准主题没有整块底色，当前节目靠强调色区分（witvLive 是「直播中」牌子的白底，不能用）
+                    int accent = ThemeColors.get(this, R.attr.witvAccent);
+                    timeView.setTextColor(accent);
+                    titleView.setTextColor(accent);
+                } else {
+                    timeView.setTextColor(ThemeColors.get(this, R.attr.witvLive));
+                }
+                if (isEpgCurrentBlock()) {
+                    row.setBackgroundResource(R.drawable.epg_program_row_current_bg);
+                    // 稿里当前节目是整块、比列表宽出来一点：左右各外扩，文字位置不变
+                    int bleed = dpToPx(12);
+                    LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) row.getLayoutParams();
+                    lp.leftMargin = -bleed;
+                    lp.rightMargin = -bleed;
+                    row.setPadding(bleed, row.getPaddingTop(), bleed, row.getPaddingBottom());
+                    badgeView.setVisibility(View.VISIBLE);
+                    progressRow.setVisibility(View.VISIBLE);
+                    long total = Math.max(1L, p.endTime - p.startTime);
+                    float ratio = (now - p.startTime) / (float) total;
+                    ratio = Math.max(0f, Math.min(1f, ratio));
+                    setProgressWeight(row.findViewById(R.id.epg_program_progress_fill), ratio);
+                    setProgressWeight(row.findViewById(R.id.epg_program_progress_rest), 1f - ratio);
+                }
+                currentRow = row;
+            }
+            channelListEpgList.addView(row);
+        }
+        if (currentRow != null && channelListEpgScroll != null) {
+            final View target = currentRow;
+            channelListEpgScroll.post(() -> channelListEpgScroll.smoothScrollTo(
+                    0, Math.max(0, target.getTop() - dpToPx(8))));
+        }
+    }
+
+    private static void setProgressWeight(View view, float weight) {
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) view.getLayoutParams();
+        lp.width = 0;
+        lp.weight = Math.max(0.0001f, weight);
+        view.setLayoutParams(lp);
+    }
+
+    /** 今天的零点到明天零点 */
+    private static long[] todayRange() {
+        Calendar c = Calendar.getInstance();
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        long from = c.getTimeInMillis();
+        c.add(Calendar.DAY_OF_MONTH, 1);
+        return new long[]{from, c.getTimeInMillis()};
+    }
+
+    private boolean isEpgCurrentBlock() {
+        if (epgCurrentIsBlock == null) {
+            TypedValue tv = new TypedValue();
+            boolean block = true;
+            if (getTheme().resolveAttribute(R.attr.witvEpgCurrentStyle, tv, true)) {
+                block = tv.data == 0;
+            }
+            epgCurrentIsBlock = block;
+        }
+        return epgCurrentIsBlock;
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 
     private static boolean hasEpgKey(Channel ch) {
@@ -1054,36 +1297,6 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         channelListAdapter.notifyCurrentProgramLoaded(channelId);
     }
 
-    /**
-     * 连续节目列表；正在播出的一条用主题色加粗，其余沿用 TextView 默认 secondary 色。
-     */
-    private CharSequence buildChannelListEpgText(List<EpgProgram> programs) {
-        if (programs == null || programs.isEmpty()) {
-            return getString(R.string.no_epg);
-        }
-        long now = System.currentTimeMillis();
-        int highlightColor = ContextCompat.getColor(this, R.color.accent);
-        SpannableStringBuilder ssb = new SpannableStringBuilder();
-        for (int i = 0; i < programs.size(); i++) {
-            EpgProgram p = programs.get(i);
-            String line = timeFormat.format(new Date(p.startTime)) + " - "
-                    + timeFormat.format(new Date(p.endTime)) + "  " + p.title;
-            int start = ssb.length();
-            ssb.append(line);
-            int end = ssb.length();
-            if (now >= p.startTime && now < p.endTime) {
-                ssb.setSpan(new ForegroundColorSpan(highlightColor), start, end,
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                ssb.setSpan(new StyleSpan(Typeface.BOLD), start, end,
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-            if (i < programs.size() - 1) {
-                ssb.append('\n');
-            }
-        }
-        return ssb;
-    }
-
     private void scheduleChannelListIdleHide() {
         handler.removeCallbacks(hideChannelListIdleRunnable);
         handler.postDelayed(hideChannelListIdleRunnable, CHANNEL_LIST_HIDE_IDLE_MS);
@@ -1117,9 +1330,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (settingsPanelOverlay != null) {
             settingsPanelOverlay.setVisibility(View.GONE);
         }
-        if (playerView != null) {
-            playerView.requestFocus();
-        }
+        restoreFocusAfterPanelClosed();
     }
 
     private void showSettingsPanel() {
@@ -1243,14 +1454,15 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 LinearLayout.LayoutParams.MATCH_PARENT, maxH));
         TextView tv = new TextView(this);
         tv.setText(message);
-        tv.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        tv.setTextColor(ThemeColors.get(this, R.attr.witvTextPrimary));
         tv.setTextSize(15);
         tv.setPadding(pad, pad, pad, pad);
         tv.setLineSpacing(0, 1.35f);
         sv.addView(tv);
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
-        outer.setBackgroundColor(ContextCompat.getColor(this, R.color.card_bg));
+        // 弹窗底色由主题的 dialog_bg 提供，这里不再叠一层
+        outer.setBackgroundColor(Color.TRANSPARENT);
         outer.addView(sv);
         new AlertDialog.Builder(this)
                 .setTitle(titleRes)
@@ -1261,12 +1473,13 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private String buildPlaybackMediaInfoSummary(List<EpgProgram> programs) {
         StringBuilder sb = new StringBuilder();
-        sb.append("频道：").append(currentChannel.displayName).append('\n');
+        sb.append(getString(R.string.media_info_summary_channel, currentChannel.displayName)).append('\n');
         int total = playerManager.getSourceCount();
         int idx = playerManager.getCurrentSourceIndex();
-        sb.append("当前线路：").append(idx + 1).append(" / ").append(Math.max(total, 1)).append('\n');
+        sb.append(getString(R.string.media_info_summary_stream, idx + 1, Math.max(total, 1))).append('\n');
         String url = playerManager.getCurrentPlaybackUrl();
-        sb.append("播放地址：\n").append(url != null ? url : "—").append("\n\n");
+        sb.append(getString(R.string.media_info_summary_url)).append('\n')
+                .append(url != null ? url : "—").append("\n\n");
 
         ExoPlayer exo = playerManager.getPlayer();
         String waiting = getString(R.string.media_info_waiting);
@@ -1277,20 +1490,20 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 getString(R.string.media_info_sample_rate),
                 getString(R.string.media_info_channels),
                 waiting);
-        sb.append("── 视频 ──\n");
+        sb.append(getString(R.string.media_info_summary_video_section)).append('\n');
         sb.append(cols.videoColumn.isEmpty() ? "—" : cols.videoColumn);
-        sb.append("\n\n── 音频 ──\n");
+        sb.append("\n\n").append(getString(R.string.media_info_summary_audio_section)).append('\n');
         sb.append(cols.audioColumn.isEmpty() ? "—" : cols.audioColumn);
-        sb.append("\n\n── 节目预告 ──\n");
+        sb.append("\n\n").append(getString(R.string.media_info_summary_epg_section)).append('\n');
         if (programs != null && !programs.isEmpty()) {
             EpgProgram cur = programs.get(0);
-            sb.append(getString(R.string.current_program)).append("：")
+            sb.append(getString(R.string.current_program)).append(getString(R.string.label_separator))
                     .append(cur.title).append("  ")
                     .append(timeFormat.format(new Date(cur.startTime))).append(" - ")
                     .append(timeFormat.format(new Date(cur.endTime))).append('\n');
             if (programs.size() > 1) {
                 EpgProgram next = programs.get(1);
-                sb.append(getString(R.string.next_program)).append("：")
+                sb.append(getString(R.string.next_program)).append(getString(R.string.label_separator))
                         .append(next.title).append("  ")
                         .append(timeFormat.format(new Date(next.startTime))).append('\n');
             }
@@ -1414,7 +1627,14 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             channelListOverlay.scrollToPosition(selectedIndexInGroup);
         } else {
             channelListEpgChannelName.setText("");
+            if (channelListEpgDate != null) {
+                channelListEpgDate.setVisibility(View.GONE);
+            }
+            if (channelListEpgList != null) {
+                channelListEpgList.removeAllViews();
+            }
             channelListEpgContent.setText(getString(R.string.no_epg));
+            channelListEpgContent.setVisibility(View.VISIBLE);
         }
         if (requestChannelFocus) {
             channelListOverlay.post(this::focusCurrentChannelRow);
@@ -1541,9 +1761,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         }
         cancelChannelListIdleHide();
         channelListPanel.setVisibility(View.GONE);
-        if (playerView != null) {
-            playerView.requestFocus();
-        }
+        restoreFocusAfterPanelClosed();
         return true;
     }
 
@@ -1659,7 +1877,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                 if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
                     int digit = keyCode - KeyEvent.KEYCODE_0;
                     numberInput.append(digit);
-                    switchingToast.setText("频道: " + numberInput.toString());
+                    switchingToast.setText(getString(R.string.channel_number_input, numberInput.toString()));
                     switchingToast.setVisibility(View.VISIBLE);
                     handler.removeCallbacks(numberInputRunnable);
                     handler.postDelayed(numberInputRunnable, 1500);
@@ -1710,7 +1928,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         if (exitDialog != null && exitDialog.isShowing()) {
             return;
         }
-        exitDialog = new AlertDialog.Builder(this)
+        // 退出面板保持改版前的系统样式：不走主题里的 Theme.WiTV.Dialog，直接用平台默认的 Material 弹窗
+        exitDialog = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle(R.string.exit_dialog_title)
                 .setMessage(R.string.exit_dialog_message)
                 .setNegativeButton(R.string.settings, (dialog, which) -> showSettingsPanel())
@@ -1772,6 +1991,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     @Override
     public void onSourceSwitching(int newIndex, int total) {
+        bufferingIndicator.setVisibility(View.GONE);
         switchingToast.setText(String.format(Locale.getDefault(),
                 "%s (%d/%d)", getString(R.string.switching_source), newIndex + 1, total));
         switchingToast.setVisibility(View.VISIBLE);
@@ -1797,16 +2017,13 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             return;
         }
         allSourcesFailedShowing = true;
-        switchingToast.setText(getString(R.string.all_sources_failed));
-        switchingToast.setVisibility(View.VISIBLE);
+        showPlaybackFailedCard();
     }
 
     @Override
     public void onPlaybackStarted(int sourceIndex, int total) {
-        allSourcesFailedShowing = false;
-        switchingToast.setVisibility(View.GONE);
-        sourceInfoView.setText(String.format(Locale.getDefault(),
-                getString(R.string.source_count) + " (当前: %d)", total, sourceIndex + 1));
+        dismissAllSourcesFailedToast();
+        sourceInfoView.setText(getString(R.string.source_count_with_current, total, sourceIndex + 1));
         preferenceManager.saveLastPlayStreamIndex(sourceIndex);
         updateMediaInfoText();
         updateLoadSpeedOverlayText();
@@ -1817,6 +2034,13 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         switchingToast.setText(message);
         switchingToast.setVisibility(View.VISIBLE);
         handler.postDelayed(() -> switchingToast.setVisibility(View.GONE), 3000);
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putLong(EXTRA_CHANNEL_ID, currentChannelId);
+        outState.putLong(EXTRA_SOURCE_ID, sourceId);
     }
 
     @Override
@@ -1832,6 +2056,12 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     @Override
     protected void onResume() {
         super.onResume();
+        // 在设置页切换了语言后回到播放页：按新语言重建
+        if (preferenceManager.getAppLanguage() != appliedLanguage
+                || preferenceManager.getAppTheme() != appliedTheme) {
+            recreate();
+            return;
+        }
         playerManager.resume();
         applyLoadSpeedOverlayPreference();
         startLoadSpeedRefreshIfNeeded();

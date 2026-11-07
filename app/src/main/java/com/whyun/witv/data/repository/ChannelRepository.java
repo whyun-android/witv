@@ -44,22 +44,33 @@ public class ChannelRepository {
     private final M3USourceDao m3uSourceDao;
     private final FavoriteChannelDao favoriteChannelDao;
     private final OkHttpClient httpClient;
+    /**
+     * M3U 加载成功后用它按节流策略后台刷新 EPG。只有生产构造器会赋值；
+     * 测试用的 {@code ChannelRepository(AppDatabase, OkHttpClient)} 传 null，跳过自动刷新。
+     */
+    private final EpgRepository epgRepository;
 
     public ChannelRepository(Context context) {
         this(AppDatabase.getInstance(context), new OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
-                .build());
+                .build(), new EpgRepository(context));
     }
 
     @VisibleForTesting
     ChannelRepository(AppDatabase db, OkHttpClient httpClient) {
+        this(db, httpClient, null);
+    }
+
+    @VisibleForTesting
+    ChannelRepository(AppDatabase db, OkHttpClient httpClient, EpgRepository epgRepository) {
         this.db = db;
         this.channelDao = db.channelDao();
         this.channelSourceDao = db.channelSourceDao();
         this.m3uSourceDao = db.m3uSourceDao();
         this.favoriteChannelDao = db.favoriteChannelDao();
         this.httpClient = httpClient;
+        this.epgRepository = epgRepository;
     }
 
     /**
@@ -107,8 +118,25 @@ public class ChannelRepository {
             }
             // channel_sources 是先删后插的：不放进事务的话，播放页刷新途中换台会读到空的播放源列表
             db.runInTransaction(() -> saveParsedSource(source, result));
+            // M3U 头里的 x-tvg-url 已写回 source.epgUrl（或沿用了库里已有的地址），
+            // 按节流策略后台刷新 EPG。下载很慢、且调用方可能在 UI 线程上，必须另起线程
+            triggerEpgAutoRefresh(source.epgUrl);
             return result;
         }
+    }
+
+    /**
+     * 按节流策略后台刷新 EPG，不阻塞调用方。
+     *
+     * <p>{@link EpgRepository#refreshIfStale(String, boolean)} 内部会判断 URL 是否变化、
+     * 距上次成功是否满一小时，这里不再重复判断；无 EPG 地址或测试实例（epgRepository 为 null）时直接跳过。
+     */
+    private void triggerEpgAutoRefresh(String epgUrl) {
+        if (epgRepository == null || epgUrl == null || epgUrl.isEmpty()) {
+            return;
+        }
+        final String url = epgUrl;
+        new Thread(() -> epgRepository.refreshIfStale(url, false), "witv-epg-auto-refresh").start();
     }
 
     private void saveParsedSource(M3USource source, M3UParser.ParseResult result) {
@@ -178,10 +206,19 @@ public class ChannelRepository {
             channelDao.deleteByIds(toDelete);
         }
 
-        // Update source EPG URL if found in parse result
-        if (result.epgUrl != null && !result.epgUrl.isEmpty()) {
-            source.epgUrl = result.epgUrl;
-            m3uSourceDao.update(source);
+        // 只更新「直播源内」的 EPG 地址，用户自定义的地址和切换开关不动，再按开关重算生效地址。
+        // 调用方手里的 source 可能是很久以前读的（播放页启动时缓存），直接整行 update 会把用户
+        // 在 Web 管理页刚改的自定义地址冲掉，所以以库里的最新一行为准
+        M3USource fresh = m3uSourceDao.getById(sourceId);
+        M3USource target = fresh != null ? fresh : source;
+        target.m3uEpgUrl = (result.epgUrl != null && !result.epgUrl.isEmpty()) ? result.epgUrl : null;
+        target.applyEffectiveEpgUrl();
+        m3uSourceDao.update(target);
+        if (target != source) {
+            source.m3uEpgUrl = target.m3uEpgUrl;
+            source.customEpgUrl = target.customEpgUrl;
+            source.useCustomEpg = target.useCustomEpg;
+            source.epgUrl = target.epgUrl;
         }
     }
 

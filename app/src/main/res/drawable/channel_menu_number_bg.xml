@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 号码 TextView 的底：只有焦点行才压红色号码块（标准主题里这块是透明的）。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/channel_menu_number_plate" android:state_focused="true" />
+    <item android:drawable="@android:color/transparent" />
+</selector>

@@ -192,15 +192,16 @@ public class WebServer extends NanoHTTPD {
             source.isActive = true;
         }
 
+        final boolean autoActivated = source.isActive;
         new Thread(() -> {
             try {
                 source.id = id;
+                // loadSource 加载成功后会按节流策略自动后台刷新 EPG（见 ChannelRepository#loadSource），
+                // 这里不再单独拉一次，避免与自动刷新重复下载同一个 EPG
                 channelRepo.loadSource(source);
-                // Auto-load EPG if URL was extracted from M3U
-                M3USource updated = db.m3uSourceDao().getById(id);
-                if (updated != null && updated.epgUrl != null && !updated.epgUrl.isEmpty()) {
-                    epgRepo.loadEpg(updated.epgUrl);
-                    new PreferenceManager(context).markEpgAutoRefreshSuccess(updated.epgUrl);
+                if (autoActivated) {
+                    // First source: the TV may be sitting on the empty state, so tell it to load now
+                    WiTVApp.getInstance().notifyActiveSourceChanged(id);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -306,7 +307,12 @@ public class WebServer extends NanoHTTPD {
     private Response getSettings() {
         M3USource active = db.m3uSourceDao().getActive();
         JsonObject settings = new JsonObject();
-        settings.addProperty("epgUrl", active != null ? (active.epgUrl != null ? active.epgUrl : "") : "");
+        // epgUrl 是实际生效的地址；m3uEpgUrl / customEpgUrl 是两个候选，useCustomEpg 是切换开关
+        settings.addProperty("hasActiveSource", active != null);
+        settings.addProperty("epgUrl", active != null && active.epgUrl != null ? active.epgUrl : "");
+        settings.addProperty("m3uEpgUrl", active != null && active.m3uEpgUrl != null ? active.m3uEpgUrl : "");
+        settings.addProperty("customEpgUrl", active != null && active.customEpgUrl != null ? active.customEpgUrl : "");
+        settings.addProperty("useCustomEpg", active != null && active.useCustomEpg);
         settings.addProperty("udpxyProxyBase", new PreferenceManager(context).getUdpxyProxyBase());
         return jsonOk(gson.toJson(settings));
     }
@@ -316,9 +322,33 @@ public class WebServer extends NanoHTTPD {
         JsonObject json = gson.fromJson(body, JsonObject.class);
 
         M3USource active = db.m3uSourceDao().getActive();
-        if (active != null && json.has("epgUrl")) {
-            active.epgUrl = json.get("epgUrl").getAsString();
-            db.m3uSourceDao().update(active);
+        boolean epgChanged = false;
+        if (active != null) {
+            boolean touched = false;
+            if (json.has("customEpgUrl")) {
+                String custom = json.get("customEpgUrl").getAsString().trim();
+                active.customEpgUrl = custom.isEmpty() ? null : custom;
+                touched = true;
+            } else if (json.has("epgUrl")) {
+                // 兼容旧版页面 / 脚本：只传一个 epgUrl 的，当作「填了自定义地址并启用」
+                String custom = json.get("epgUrl").getAsString().trim();
+                active.customEpgUrl = custom.isEmpty() ? null : custom;
+                active.useCustomEpg = !custom.isEmpty();
+                touched = true;
+            }
+            if (json.has("useCustomEpg")) {
+                active.useCustomEpg = json.get("useCustomEpg").getAsBoolean();
+                touched = true;
+            }
+            if (touched) {
+                epgChanged = active.applyEffectiveEpgUrl();
+                db.m3uSourceDao().update(active);
+            }
+        }
+        if (epgChanged && active.epgUrl != null) {
+            // 生效地址变了：后台按新地址拉一次（地址变化本身就会跳过节流），不用再手动点「刷新 EPG」
+            final String url = active.epgUrl;
+            new Thread(() -> epgRepo.refreshIfStale(url, false), "witv-epg-settings-refresh").start();
         }
         // 组播转单播代理：遥控器输入 URL 很痛苦，Web 管理页是更合适的入口
         if (json.has("udpxyProxyBase")) {
@@ -328,6 +358,8 @@ public class WebServer extends NanoHTTPD {
 
         JsonObject result = new JsonObject();
         result.addProperty("success", true);
+        result.addProperty("epgUrl", active != null && active.epgUrl != null ? active.epgUrl : "");
+        result.addProperty("epgRefreshing", epgChanged && active.epgUrl != null);
         result.addProperty("udpxyProxyBase", new PreferenceManager(context).getUdpxyProxyBase());
         return jsonOk(gson.toJson(result));
     }
@@ -370,17 +402,14 @@ public class WebServer extends NanoHTTPD {
             return jsonError(Response.Status.BAD_REQUEST, "No EPG URL configured");
         }
 
-        final String epgUrl = active.epgUrl;
-        new Thread(() -> {
-            try {
-                epgRepo.loadEpg(epgUrl);
-                new PreferenceManager(context).markEpgAutoRefreshSuccess(epgUrl);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }).start();
-
-        return jsonOk("{\"success\":true,\"message\":\"EPG reloading in background\"}");
+        // 用户主动触发：忽略节流强制刷新。NanoHTTPD 每个请求在独立线程上处理，
+        // 这里同步跑完才能把失败原因带回前端（原来是后台线程 + 静默成功）
+        EpgRepository.RefreshResult result = epgRepo.refreshIfStale(active.epgUrl, true);
+        if (!result.success) {
+            return jsonError(Response.Status.INTERNAL_ERROR,
+                    result.errorMessage != null ? result.errorMessage : "EPG refresh failed");
+        }
+        return jsonOk("{\"success\":true,\"message\":\"EPG reloaded\"}");
     }
 
     // --- Channel EPG handler ---

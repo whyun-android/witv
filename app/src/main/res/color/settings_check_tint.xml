@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 聚焦行是蓝底，复选框再用浅蓝就看不出勾没勾上；聚焦时改白色 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="?attr/witvTextPrimary" android:state_focused="true" />
+    <item android:color="?attr/witvAccent" />
+</selector>

@@ -23,6 +23,10 @@ public class PreferenceManager {
     private static final String KEY_UDPXY_PROXY_BASE = "udpxy_proxy_base";
     /** 解码方式：硬解与 FFmpeg 软解的优先级，取值见 {@link PlaybackDecoderMode#getId()} */
     private static final String KEY_PLAYBACK_DECODER_MODE = "playback_decoder_mode";
+    /** 界面语言，取值见 {@link AppLanguage#getId()} */
+    private static final String KEY_APP_LANGUAGE = "app_language";
+    /** 界面主题，取值见 {@link AppTheme#getId()} */
+    private static final String KEY_APP_THEME = "app_theme";
 
     /** 单线路超时未起播则换源；可选值见 {@link #normalizeSourceSwitchTimeoutMs(long)} */
     public static final long DEFAULT_SOURCE_SWITCH_TIMEOUT_MS = 15_000L;
@@ -169,6 +173,33 @@ public class PreferenceManager {
 
     public static int[] getAllowedSourceTimeoutSeconds() {
         return new int[]{5, 10, 15, 20, 25, 30};
+    }
+
+    /**
+     * 不经过 getApplicationContext() 读取语言：Application#attachBaseContext 阶段
+     * 其 base Context 的 getApplicationContext() 仍为 null。
+     */
+    static AppLanguage readAppLanguage(Context context) {
+        return AppLanguage.fromId(context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_APP_LANGUAGE, null));
+    }
+
+    public AppLanguage getAppLanguage() {
+        return AppLanguage.fromId(prefs.getString(KEY_APP_LANGUAGE, null));
+    }
+
+    /** 同步写入：调用方随后会重建 Activity，需保证 attachBaseContext 读到新值 */
+    public void setAppLanguage(AppLanguage language) {
+        prefs.edit().putString(KEY_APP_LANGUAGE, language.getId()).commit();
+    }
+
+    public AppTheme getAppTheme() {
+        return AppTheme.fromId(prefs.getString(KEY_APP_THEME, null));
+    }
+
+    /** 同步写入：调用方随后会重建 Activity，onCreate 里要读到新值 */
+    public void setAppTheme(AppTheme theme) {
+        prefs.edit().putString(KEY_APP_THEME, theme.getId()).commit();
     }
 
     public void clearLastChannel() {

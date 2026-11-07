@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 电视包装主题焦点行的红色号码块：直接作号码 TextView 的底，和号码同宽同高，号码不会压到斜边外。
+     左侧两角跟行底同为 8dp 圆角，右缘斜切（上宽下窄，照稿 clip-path 82%）。
+     标准主题的 witvFocusAccent 是透明的，同一张图渲染出来不可见，不用分两套。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="52dp"
+    android:height="76dp"
+    android:viewportWidth="52"
+    android:viewportHeight="76">
+    <path
+        android:fillColor="?attr/witvFocusAccent"
+        android:pathData="M8,0 L52,0 L43,76 L8,76 A8,8 0 0,1 0,68 L0,8 A8,8 0 0,1 8,0 Z" />
+</vector>

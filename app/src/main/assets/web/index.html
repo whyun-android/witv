@@ -10,62 +10,84 @@
 <body>
     <div class="container">
         <header>
-            <h1>📺 WiTV 管理</h1>
-            <p class="subtitle">Android TV M3U 播放器 <span id="appVersion"></span></p>
+            <button type="button" class="btn btn-secondary btn-sm lang-toggle" onclick="toggleLang()" data-i18n="lang.toggle">English</button>
+            <h1 data-i18n="header.title">📺 WiTV 管理</h1>
+            <p class="subtitle"><span data-i18n="header.subtitle">Android TV M3U 播放器</span> <span id="appVersion"></span></p>
         </header>
 
         <!-- Add Source -->
         <section class="card">
-            <h2>添加播放源</h2>
+            <h2 data-i18n="source.add.title">添加播放源</h2>
             <form id="addSourceForm">
                 <div class="form-group">
-                    <label for="sourceName">名称</label>
-                    <input type="text" id="sourceName" placeholder="如：IPTV 直播源">
+                    <label for="sourceName" data-i18n="source.name">名称</label>
+                    <input type="text" id="sourceName" placeholder="如：IPTV 直播源" data-i18n-placeholder="source.name.placeholder">
                 </div>
                 <div class="form-group">
-                    <label for="sourceUrl">M3U 地址 <span class="required">*</span></label>
+                    <label for="sourceUrl"><span data-i18n="source.url">M3U 地址</span> <span class="required">*</span></label>
                     <input type="url" id="sourceUrl" placeholder="http://example.com/live.m3u" required>
                 </div>
-                <button type="submit" class="btn btn-primary">添加</button>
+                <button type="submit" class="btn btn-primary" data-i18n="source.add.button">添加</button>
             </form>
         </section>
 
         <!-- Source List -->
         <section class="card">
-            <h2>播放源列表</h2>
+            <h2 data-i18n="source.list.title">播放源列表</h2>
             <div id="sourceList" class="source-list">
-                <p class="empty-hint">暂无播放源</p>
+                <p class="empty-hint" data-i18n="source.empty">暂无播放源</p>
             </div>
         </section>
 
         <!-- Favorites -->
         <section class="card" id="favoriteSection" style="display:none">
-            <h2>⭐ 我的收藏 <span id="favoriteCount" class="badge"></span></h2>
+            <h2><span data-i18n="favorites.title">⭐ 我的收藏</span> <span id="favoriteCount" class="badge"></span></h2>
             <div id="favoriteList" class="group-channels"></div>
         </section>
 
         <!-- Channel Preview -->
         <section class="card" id="channelSection" style="display:none">
-            <h2>频道列表 <span id="channelCount" class="badge"></span></h2>
+            <h2><span data-i18n="channels.title">频道列表</span> <span id="channelCount" class="badge"></span></h2>
             <div id="channelGroups" class="channel-groups"></div>
         </section>
 
         <!-- Settings -->
         <section class="card">
-            <h2>设置</h2>
-            <div class="form-group">
-                <label for="epgUrl">EPG 节目预告地址 (XMLTV)</label>
-                <div class="input-row">
-                    <input type="url" id="epgUrl" placeholder="http://example.com/epg.xml">
-                    <button class="btn btn-secondary" onclick="saveSettings()">保存</button>
-                    <button class="btn btn-secondary" onclick="reloadEpg()">刷新EPG</button>
+            <h2 data-i18n="settings.title">设置</h2>
+            <div class="form-group epg-group">
+                <div class="epg-head">
+                    <span class="epg-head-title" data-i18n="settings.epg">EPG 节目预告地址 (XMLTV)</span>
+                    <label class="switch" for="useCustomEpg">
+                        <input type="checkbox" id="useCustomEpg" role="switch" onchange="onEpgSwitchChange()">
+                        <span class="switch-track" aria-hidden="true"></span>
+                        <span class="switch-label" data-i18n="settings.epg.useCustom">使用自定义地址</span>
+                    </label>
+                </div>
+                <div class="epg-option" id="epgOptionM3u">
+                    <div class="epg-option-head">
+                        <span class="epg-option-name" data-i18n="settings.epg.m3u">直播源内（M3U 的 x-tvg-url）</span>
+                        <span class="epg-active-tag" data-i18n="settings.epg.inUse">使用中</span>
+                    </div>
+                    <div class="epg-readonly" id="m3uEpgUrl"></div>
+                </div>
+                <div class="epg-option" id="epgOptionCustom">
+                    <div class="epg-option-head">
+                        <label class="epg-option-name" for="customEpgUrl" data-i18n="settings.epg.custom">自定义</label>
+                        <span class="epg-active-tag" data-i18n="settings.epg.inUse">使用中</span>
+                    </div>
+                    <input type="url" id="customEpgUrl" placeholder="http://example.com/epg.xml">
+                </div>
+                <p class="epg-hint" id="epgEffectiveHint"></p>
+                <div class="input-row input-row-end">
+                    <button class="btn btn-secondary" onclick="saveSettings()" data-i18n="settings.save">保存</button>
+                    <button class="btn btn-secondary" onclick="reloadEpg()" data-i18n="settings.reloadEpg">刷新EPG</button>
                 </div>
             </div>
             <div class="form-group">
-                <label for="udpxyProxyBase">组播转单播代理 (udpxy)</label>
+                <label for="udpxyProxyBase" data-i18n="settings.udpxy">组播转单播代理 (udpxy)</label>
                 <div class="input-row">
                     <input type="url" id="udpxyProxyBase" placeholder="http://192.168.1.1:4022">
-                    <button class="btn btn-secondary" onclick="saveSettings()">保存</button>
+                    <button class="btn btn-secondary" onclick="saveSettings()" data-i18n="settings.save">保存</button>
                 </div>
                 <p class="empty-hint" id="udpxyPreview"></p>
             </div>
@@ -84,6 +106,7 @@
         </div>
     </div>
 
+    <script src="i18n.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

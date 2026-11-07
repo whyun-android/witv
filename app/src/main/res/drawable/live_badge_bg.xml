@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 频道行尾「直播中」牌子（电视包装主题） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/witvLive" />
+    <corners android:radius="4dp" />
+</shape>

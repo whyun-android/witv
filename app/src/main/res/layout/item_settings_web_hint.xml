@@ -22,7 +22,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:text="@string/web_address_qr_hint"
-        android:textColor="@color/text_secondary"
+        android:textColor="?attr/witvTextSecondary"
         android:textSize="12sp"
         android:visibility="gone" />
 
@@ -32,7 +32,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:lineSpacingMultiplier="1.35"
-        android:textColor="@color/text_secondary"
+        android:textColor="?attr/witvTextSecondary"
         android:textSize="14sp" />
 
 </LinearLayout>

@@ -21,7 +21,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/witvTextPrimary"
             android:textSize="16sp"
             android:textStyle="bold" />
 
@@ -32,7 +32,7 @@
             android:layout_marginTop="2dp"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/witvTextSecondary"
             android:textSize="12sp" />
 
     </LinearLayout>
@@ -42,11 +42,11 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
-        android:background="@color/source_active"
+        android:background="?attr/witvLive"
         android:paddingHorizontal="8dp"
         android:paddingVertical="2dp"
-        android:text="当前"
-        android:textColor="@color/text_primary"
+        android:text="@string/stream_current_label"
+        android:textColor="?attr/witvOnLive"
         android:textSize="12sp"
         android:visibility="gone" />
 

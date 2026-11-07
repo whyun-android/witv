@@ -6,5 +6,5 @@
     android:lineSpacingMultiplier="1.35"
     android:paddingHorizontal="20dp"
     android:paddingVertical="10dp"
-    android:textColor="@color/text_secondary"
+    android:textColor="?attr/witvTextSecondary"
     android:textSize="14sp" />

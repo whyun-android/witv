@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置面板里的主操作按钮（保存）：平时用主色，聚焦时与其他按钮一样蓝底白描边 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/witvControlFocusBg" />
+            <stroke
+                android:width="2dp"
+                android:color="?attr/witvTextPrimary" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/witvPrimaryButtonBg" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+</selector>

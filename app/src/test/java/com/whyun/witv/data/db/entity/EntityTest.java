@@ -77,6 +77,35 @@ public class EntityTest {
         assertNull(src.epgUrl);
     }
 
+    @Test
+    public void m3uSourceEpgSwitchPicksSelectedSide() {
+        M3USource src = new M3USource();
+        src.m3uEpgUrl = "http://m3u/e.xml";
+        src.customEpgUrl = "http://custom/e.xml";
+
+        assertTrue(src.applyEffectiveEpgUrl());
+        assertEquals("http://m3u/e.xml", src.epgUrl);
+
+        src.useCustomEpg = true;
+        assertTrue(src.applyEffectiveEpgUrl());
+        assertEquals("http://custom/e.xml", src.epgUrl);
+        assertFalse(src.applyEffectiveEpgUrl());
+    }
+
+    @Test
+    public void m3uSourceEpgFallsBackWhenSelectedSideEmpty() {
+        M3USource src = new M3USource();
+        src.customEpgUrl = "http://custom/e.xml";
+        src.useCustomEpg = false;
+        src.applyEffectiveEpgUrl();
+        assertEquals("http://custom/e.xml", src.epgUrl);
+
+        src.customEpgUrl = "  ";
+        src.useCustomEpg = true;
+        src.applyEffectiveEpgUrl();
+        assertNull(src.epgUrl);
+    }
+
     // --- ChannelSource ---
 
     @Test

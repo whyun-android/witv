@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 频道栏的行底。电视包装的红色号码块不画在这里，而是作为号码 TextView 自己的底
+     （channel_menu_number_bg），这样红块和号码永远同一个框，不会错位。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/witvFocusBg" />
+            <corners android:radius="?attr/witvMenuRowRadius" />
+        </shape>
+    </item>
+    <item android:state_selected="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/witvSelectedBg" />
+            <corners android:radius="?attr/witvMenuRowRadius" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="?attr/witvMenuRowRadius" />
+        </shape>
+    </item>
+</selector>

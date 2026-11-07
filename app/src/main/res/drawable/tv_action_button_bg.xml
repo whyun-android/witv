@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放页浮层上的操作按钮（如播放失败卡片）：和频道菜单同一套焦点语言，蓝底白描边；
+     未聚焦时也要有底色，否则一排按钮在深色卡片上看不出是可点的 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/witvControlFocusBg" />
+            <stroke
+                android:width="2dp"
+                android:color="?attr/witvTextPrimary" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/witvCardStroke" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
+</selector>

@@ -17,11 +17,11 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
         android:layout_margin="16dp"
-        android:background="@color/epg_overlay_bg"
+        android:background="?attr/witvOverlayBg"
         android:fontFamily="monospace"
         android:paddingHorizontal="12dp"
         android:paddingVertical="8dp"
-        android:textColor="@color/text_primary"
+        android:textColor="?attr/witvTextPrimary"
         android:textSize="16sp"
         android:textStyle="bold"
         android:visibility="gone" />
@@ -32,7 +32,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="@color/epg_overlay_bg"
+        android:background="?attr/witvOverlayBg"
         android:orientation="horizontal"
         android:padding="24dp"
         android:visibility="gone">
@@ -73,7 +73,7 @@
                             android:id="@+id/channel_name"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/witvTextPrimary"
                             android:textSize="22sp"
                             android:textStyle="bold" />
 
@@ -92,7 +92,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:textColor="@color/text_secondary"
+                        android:textColor="?attr/witvTextSecondary"
                         android:textSize="14sp" />
 
                 </LinearLayout>
@@ -111,7 +111,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:drawablePadding="8dp"
-                    android:textColor="@color/source_active"
+                    android:textColor="?attr/witvLive"
                     android:textSize="16sp" />
 
                 <TextView
@@ -120,7 +120,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:drawablePadding="8dp"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/witvTextSecondary"
                     android:textSize="14sp" />
 
             </LinearLayout>
@@ -139,7 +139,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/media_info_title"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/witvTextPrimary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -159,7 +159,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/media_info_column_video"
-                        android:textColor="@color/source_active"
+                        android:textColor="?attr/witvLive"
                         android:textSize="12sp"
                         android:textStyle="bold" />
 
@@ -170,7 +170,7 @@
                         android:layout_marginTop="4dp"
                         android:fontFamily="monospace"
                         android:lineSpacingExtra="2dp"
-                        android:textColor="@color/text_secondary"
+                        android:textColor="?attr/witvTextSecondary"
                         android:textSize="13sp" />
                 </LinearLayout>
 
@@ -185,7 +185,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/media_info_column_audio"
-                        android:textColor="@color/source_active"
+                        android:textColor="?attr/witvLive"
                         android:textSize="12sp"
                         android:textStyle="bold" />
 
@@ -196,7 +196,7 @@
                         android:layout_marginTop="4dp"
                         android:fontFamily="monospace"
                         android:lineSpacingExtra="2dp"
-                        android:textColor="@color/text_secondary"
+                        android:textColor="?attr/witvTextSecondary"
                         android:textSize="13sp" />
                 </LinearLayout>
             </LinearLayout>
@@ -210,17 +210,105 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:background="@color/epg_overlay_bg"
+        android:background="?attr/witvOverlayBg"
         android:padding="16dp"
-        android:textColor="@color/text_primary"
+        android:textColor="?attr/witvTextPrimary"
         android:textSize="18sp"
         android:visibility="gone" />
+
+    <!-- 卡顿提示：缓冲持续一小段时间后才出现，避免每次起播都闪一下 -->
+    <LinearLayout
+        android:id="@+id/buffering_indicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/playback_status_card_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="16dp"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:indeterminate="true"
+            android:indeterminateTint="?attr/witvTextPrimary" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="@string/buffering"
+            android:textColor="?attr/witvTextPrimary"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+    <!-- 所有播放地址都失败：说明发生了什么，并给出下一步 -->
+    <LinearLayout
+        android:id="@+id/playback_failed_card"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/playback_status_card_bg"
+        android:gravity="center_horizontal"
+        android:minWidth="560dp"
+        android:orientation="vertical"
+        android:paddingHorizontal="40dp"
+        android:paddingVertical="32dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/playback_failed_title"
+            android:textColor="?attr/witvTextPrimary"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/playback_failed_detail"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:lineSpacingExtra="4dp"
+            android:maxWidth="640dp"
+            android:textColor="?attr/witvTextSecondary"
+            android:textSize="18sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_playback_retry"
+                android:nextFocusLeft="@id/btn_playback_retry"
+                style="@style/TvActionButton"
+                android:text="@string/playback_failed_retry" />
+
+            <Button
+                android:id="@+id/btn_playback_next_channel"
+                style="@style/TvActionButton"
+                android:layout_marginStart="16dp"
+                android:text="@string/playback_failed_next_channel" />
+
+            <Button
+                android:id="@+id/btn_playback_channel_list"
+                android:nextFocusRight="@id/btn_playback_channel_list"
+                style="@style/TvActionButton"
+                android:layout_marginStart="16dp"
+                android:text="@string/playback_failed_channel_list" />
+        </LinearLayout>
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/empty_state"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#CC000000"
+        android:background="?attr/witvFullScrim"
         android:focusable="false"
         android:gravity="center"
         android:orientation="vertical"
@@ -231,7 +319,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/no_source_title"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/witvTextPrimary"
             android:textSize="28sp"
             android:textStyle="bold" />
 
@@ -240,7 +328,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="@string/no_source_hint"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/witvTextSecondary"
             android:textSize="18sp" />
 
         <ImageView
@@ -258,19 +346,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:textColor="@color/source_active"
+            android:textColor="?attr/witvLive"
             android:textSize="24sp"
             android:textStyle="bold" />
 
         <Button
             android:id="@+id/btn_refresh_web_hint"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            style="@style/TvActionButton.Primary"
             android:layout_marginTop="24dp"
-            android:backgroundTint="@color/accent"
-            android:minWidth="160dp"
-            android:paddingHorizontal="28dp"
-            android:paddingVertical="12dp"
             android:text="@string/refresh_web_address" />
     </LinearLayout>
 
@@ -286,7 +369,7 @@
             android:id="@+id/channel_group_list_overlay"
             android:layout_width="220dp"
             android:layout_height="match_parent"
-            android:background="#E30C1218"
+            android:background="?attr/witvMenuGroupsBg"
             android:clipToPadding="false"
             android:padding="8dp" />
 
@@ -294,7 +377,7 @@
             android:id="@+id/channel_list_overlay"
             android:layout_width="340dp"
             android:layout_height="match_parent"
-            android:background="@color/channel_list_bg"
+            android:background="?attr/witvMenuListBg"
             android:clipToPadding="false"
             android:padding="8dp" />
 
@@ -302,7 +385,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="#E6101820"
+            android:background="?attr/witvMenuEpgBg"
             android:orientation="vertical">
 
             <ScrollView
@@ -317,37 +400,56 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:paddingHorizontal="14dp"
-                    android:paddingTop="14dp"
+                    android:paddingHorizontal="24dp"
+                    android:paddingTop="24dp"
                     android:paddingBottom="20dp">
 
                     <TextView
                         android:id="@+id/channel_list_epg_channel_name"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_primary"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textColor="?attr/witvTextPrimary"
                         android:textSize="24sp"
                         android:textStyle="bold" />
 
                     <TextView
+                        android:id="@+id/channel_list_epg_date"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textColor="?attr/witvTextSecondary"
+                        android:textSize="15sp"
+                        android:visibility="gone" />
+
+                    <!-- 当天节目列表：一行一个节目，当前节目原位高亮（见 item_epg_program） -->
+                    <LinearLayout
+                        android:id="@+id/channel_list_epg_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:orientation="vertical" />
+
+                    <!-- 无节目 / 加载中的提示 -->
+                    <TextView
                         android:id="@+id/channel_list_epg_content"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:lineSpacingMultiplier="1.25"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="18sp" />
+                        android:layout_marginTop="8dp"
+                        android:textColor="?attr/witvTextSecondary"
+                        android:textSize="17sp" />
                 </LinearLayout>
             </ScrollView>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingHorizontal="14dp"
+                android:paddingHorizontal="24dp"
                 android:paddingVertical="12dp"
                 android:text="@string/channel_menu_key_hint"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:textColor="?attr/witvTextSecondary"
+                android:textSize="15sp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -364,7 +466,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="#99000000"
+            android:background="?attr/witvMenuScrim"
             android:clickable="true"
             android:focusable="false" />
 
@@ -372,7 +474,7 @@
             android:id="@+id/settings_panel_content"
             android:layout_width="480dp"
             android:layout_height="match_parent"
-            android:background="#0F1923"
+            android:background="?attr/witvWindowBg"
             android:clickable="true"
             android:focusable="true" />
     </LinearLayout>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 频道菜单的号码文字：焦点行上要跟「红色号码块 / 蓝色高亮」拉开对比，所以焦点色单独给 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="?attr/witvOnFocusNumber" android:state_focused="true" />
+    <item android:color="?attr/witvTextSecondary" />
+</selector>

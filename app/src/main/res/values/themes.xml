@@ -6,5 +6,140 @@
         <item name="android:colorPrimary">#1565C0</item>
         <item name="android:colorPrimaryDark">#0D47A1</item>
         <item name="android:colorAccent">#42A5F5</item>
+        <item name="android:alertDialogTheme">@style/Theme.WiTV.Dialog</item>
+        <item name="alertDialogTheme">@style/Theme.WiTV.Dialog</item>
+        <!-- 标准主题：深色半透明面板 + 蓝色焦点 -->
+        <item name="witvWindowBg">#FF0F1923</item>
+        <item name="witvSidebarBg">#FF152028</item>
+        <!-- 频道菜单三栏：同一透明度，只拉开明度（分组最暗 / 频道最亮 / 节目单居中），相邻两栏靠色块自然分开 -->
+        <item name="witvMenuGroupsBg">#D9070B0F</item>
+        <item name="witvMenuListBg">#D9152029</item>
+        <item name="witvMenuEpgBg">#D90D141B</item>
+        <item name="witvMenuScrim">#66000000</item>
+        <item name="witvOverlayBg">#B3000000</item>
+        <item name="witvFullScrim">#B3000000</item>
+        <item name="witvCardBg">#CC263238</item>
+        <item name="witvCardStroke">#FF37474F</item>
+        <item name="witvFocusBg">#FF1E88E5</item>
+        <item name="witvFocusStroke">#FFFFFFFF</item>
+        <item name="witvOnFocus">#FFFFFFFF</item>
+        <item name="witvOnFocusSecondary">#E6FFFFFF</item>
+        <item name="witvFocusAccent">#00000000</item>
+        <item name="witvControlFocusBg">#FF1E88E5</item>
+        <item name="witvSelectedBg">#4D42A5F5</item>
+        <item name="witvTextPrimary">#FFFFFFFF</item>
+        <item name="witvTextSecondary">#FFB0BEC5</item>
+        <item name="witvAccent">#FF42A5F5</item>
+        <item name="witvPrimaryButtonBg">#FF1565C0</item>
+        <item name="witvLive">#FFFFFFFF</item>
+        <item name="witvOnLive">#FF1565C0</item>
+        <!-- 频道菜单的行圆角 / 行首号码列 / 节目单分栏线 / 正在播与当前节目的形态 -->
+        <item name="witvMenuRowRadius">12dp</item>
+        <item name="witvChannelNumberWidth">44dp</item>
+        <item name="witvChannelNumberStyle">@style/ChannelNumber.Standard</item>
+        <item name="witvOnFocusNumber">#FFE3ECFF</item>
+        <item name="witvEpgDivider">#1FFFFFFF</item>
+        <item name="witvEpgCurrentStyle">text</item>
+    </style>
+
+    <!-- 「电视台包装」主题：演播室深蓝半透明面板，焦点行是白色台名条 + 左侧红色号码块，金色表示正在播 -->
+    <style name="Theme.WiTV.Broadcast">
+        <item name="android:colorAccent">#F2B705</item>
+        <item name="android:alertDialogTheme">@style/Theme.WiTV.Dialog.Broadcast</item>
+        <item name="alertDialogTheme">@style/Theme.WiTV.Dialog.Broadcast</item>
+        <item name="witvWindowBg">#FF081434</item>
+        <item name="witvSidebarBg">#FF0C1A42</item>
+        <item name="witvMenuGroupsBg">#D9030A1E</item>
+        <item name="witvMenuListBg">#D90B1C4A</item>
+        <item name="witvMenuEpgBg">#D9061232</item>
+        <item name="witvMenuScrim">#55000814</item>
+        <item name="witvOverlayBg">#C0081434</item>
+        <item name="witvFullScrim">#B3081434</item>
+        <item name="witvCardBg">#CC13265C</item>
+        <item name="witvCardStroke">#FF2A3F7A</item>
+        <!-- 焦点行：白色字幕条，左侧红色号码块，深蓝文字 -->
+        <item name="witvFocusBg">#FFFFFFFF</item>
+        <item name="witvFocusStroke">#FFFFFFFF</item>
+        <item name="witvOnFocus">#FF081434</item>
+        <item name="witvOnFocusSecondary">#FF3A4B78</item>
+        <item name="witvFocusAccent">#FFD7261E</item>
+        <!-- 设置菜单 / 按钮的焦点底：整行铺满，用号码块那种正红太冲，降饱和度（正红只留给频道号码块 witvFocusAccent） -->
+        <item name="witvControlFocusBg">#FFAA404B</item>
+        <item name="witvSelectedBg">#E613265C</item>
+        <item name="witvTextPrimary">#FFFFFFFF</item>
+        <item name="witvTextSecondary">#FFAFC0E6</item>
+        <item name="witvAccent">#FFF2B705</item>
+        <item name="witvPrimaryButtonBg">#FF2A3F7A</item>
+        <item name="witvLive">#FFF2B705</item>
+        <item name="witvOnLive">#FF081434</item>
+        <!-- 频道菜单的行圆角 / 行首号码列 / 节目单分栏线 / 正在播与当前节目的形态 -->
+        <item name="witvMenuRowRadius">8dp</item>
+        <item name="witvChannelNumberWidth">52dp</item>
+        <item name="witvChannelNumberStyle">@style/ChannelNumber.Packaging</item>
+        <item name="witvOnFocusNumber">#FFFFFFFF</item>
+        <item name="witvEpgDivider">#FF13265C</item>
+        <item name="witvEpgCurrentStyle">block</item>
+    </style>
+
+    <!-- 弹窗：跟随主题的底色与强调色 -->
+    <style name="Theme.WiTV.Dialog" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+        <item name="colorAccent">#42A5F5</item>
+        <item name="witvCardBg">#F2263238</item>
+        <item name="witvCardStroke">#FF37474F</item>
+    </style>
+
+    <style name="Theme.WiTV.Dialog.Broadcast">
+        <item name="colorAccent">#F2B705</item>
+        <item name="witvCardBg">#F213265C</item>
+        <item name="witvCardStroke">#FF2A3F7A</item>
+    </style>
+
+    <!-- 播放页浮层上的遥控器操作按钮：3 米外可读的字号与高度，焦点态见 tv_action_button_bg -->
+    <style name="TvActionButton" parent="Widget.AppCompat.Button.Borderless">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minWidth">160dp</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="android:paddingStart">28dp</item>
+        <item name="android:paddingEnd">28dp</item>
+        <item name="android:background">@drawable/tv_action_button_bg</item>
+        <item name="android:focusable">true</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <style name="TvActionButton.Primary">
+        <item name="android:background">@drawable/tv_action_button_primary_bg</item>
+    </style>
+
+    <!-- 设置面板内的按钮：比播放页浮层上的小一档，焦点语言相同 -->
+    <style name="TvActionButton.Compact">
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="TvActionButton.Compact.Primary">
+        <item name="android:background">@drawable/tv_action_button_primary_bg</item>
+    </style>
+
+    <!-- 频道菜单行首的号码：电视包装是整块门牌号（大且粗），标准是窄的次要号码 -->
+    <style name="ChannelNumber.Standard" parent="">
+        <item name="android:textSize">18sp</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:textColor">@color/menu_number_text</item>
+    </style>
+
+    <style name="ChannelNumber.Packaging" parent="">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+        <!-- 斜边让块的下半截窄 9dp，号码往左让 5dp 落在梯形的视觉中心 -->
+        <item name="android:paddingEnd">5dp</item>
+        <item name="android:textColor">@color/menu_number_text</item>
     </style>
 </resources>

@@ -10,10 +10,14 @@
         android:id="@+id/check_option"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@drawable/channel_item_bg"
         android:focusable="true"
-        android:textColor="@color/text_primary"
+        android:minHeight="48dp"
+        android:paddingVertical="8dp"
+        android:paddingEnd="12dp"
+        android:textColor="?attr/witvTextPrimary"
         android:textSize="16sp"
-        android:buttonTint="@color/accent" />
+        android:buttonTint="@color/settings_check_tint" />
 
     <TextView
         android:id="@+id/check_hint"
@@ -21,7 +25,7 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="32dp"
         android:layout_marginTop="4dp"
-        android:textColor="@color/text_secondary"
+        android:textColor="?attr/witvTextSecondary"
         android:textSize="12sp"
         android:visibility="gone" />
 

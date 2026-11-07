@@ -35,4 +35,23 @@ public class MediaInfoFormatterTest {
                 .build();
         assertEquals("AAC（常用，LC）", MediaInfoFormatter.audioCodecLabel(f));
     }
+
+    @Test
+    public void codecLabels_englishMode() {
+        MediaInfoFormatter.setChinese(false);
+        try {
+            Format v = new Format.Builder()
+                    .setSampleMimeType(MimeTypes.VIDEO_H264)
+                    .setCodecs("avc1.640029")
+                    .build();
+            assertEquals("H.264 · High · Level 4.1", MediaInfoFormatter.videoCodecLabel(v));
+            Format a = new Format.Builder()
+                    .setSampleMimeType(MimeTypes.AUDIO_AAC)
+                    .setCodecs("mp4a.40.2")
+                    .build();
+            assertEquals("AAC-LC", MediaInfoFormatter.audioCodecLabel(a));
+        } finally {
+            MediaInfoFormatter.setChinese(true);
+        }
+    }
 }

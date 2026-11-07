@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 节目单里「当前节目」那一行：整块底色，不再画分隔线 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/witvCardBg" />
+    <corners android:radius="8dp" />
+</shape>

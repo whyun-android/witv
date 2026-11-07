@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 频道菜单次要文字（节目名、频道号）：聚焦时跟着焦点条换色 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="?attr/witvOnFocusSecondary" android:state_focused="true" />
+    <item android:color="?attr/witvTextSecondary" />
+</selector>

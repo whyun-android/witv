@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 频道菜单主文字：聚焦时换成主题的焦点文字色（电视台包装的白色焦点条上是深蓝） -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="?attr/witvOnFocus" android:state_focused="true" />
+    <item android:color="?attr/witvTextPrimary" />
+</selector>

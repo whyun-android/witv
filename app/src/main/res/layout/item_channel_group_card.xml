@@ -11,5 +11,5 @@
     android:gravity="center_vertical"
     android:maxLines="1"
     android:paddingHorizontal="18dp"
-    android:textColor="@color/text_primary"
-    android:textSize="18sp" />
+    android:textColor="@color/menu_text_primary"
+    android:textSize="20sp" />

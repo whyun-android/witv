@@ -1,5 +1,6 @@
 package com.whyun.witv.ui;
 
+import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -151,8 +152,8 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
         }
 
         holder.itemView.setSelected(position == selectedIndex);
-        if (holder.playingView != null) {
-            holder.playingView.setVisibility(position == selectedIndex ? View.VISIBLE : View.GONE);
+        if (holder.liveBadgeView != null) {
+            holder.liveBadgeView.setVisibility(position == selectedIndex ? View.VISIBLE : View.GONE);
         }
         holder.itemView.setOnClickListener(v -> {
             if (listener != null) listener.onChannelClick(channel);
@@ -215,7 +216,7 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
         TextView numberView;
         ImageView logoView;
         ImageView favoriteView;
-        ImageView playingView;
+        TextView liveBadgeView;
 
         VH(@NonNull View itemView) {
             super(itemView);
@@ -224,7 +225,7 @@ public class ChannelListAdapter extends RecyclerView.Adapter<ChannelListAdapter.
             numberView = itemView.findViewById(R.id.channel_number);
             logoView = itemView.findViewById(R.id.channel_logo);
             favoriteView = itemView.findViewById(R.id.channel_favorite);
-            playingView = itemView.findViewById(R.id.channel_playing);
+            liveBadgeView = itemView.findViewById(R.id.channel_live_badge);
             itemView.setFocusable(true);
             itemView.setFocusableInTouchMode(true);
         }

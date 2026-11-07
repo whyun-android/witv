@@ -3,53 +3,76 @@
     android:layout_width="match_parent"
     android:layout_height="76dp"
     android:layout_marginVertical="2dp"
-    android:background="@drawable/channel_menu_item_bg"
+    android:background="@drawable/channel_menu_row_bg"
     android:focusable="true"
     android:focusableInTouchMode="true"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:paddingHorizontal="12dp">
+    android:paddingEnd="8dp">
+
+    <!-- 行首门牌号：电视包装是红底、右缘斜切的白字块，标准是窄的次要号码 -->
+    <TextView
+        android:id="@+id/channel_number"
+        style="?attr/witvChannelNumberStyle"
+        android:layout_width="?attr/witvChannelNumberWidth"
+        android:layout_height="match_parent"
+        android:background="@drawable/channel_menu_number_bg"
+        android:duplicateParentState="true"
+        android:gravity="center"
+        android:maxLines="1" />
 
     <ImageView
         android:id="@+id/channel_logo"
         android:layout_width="40dp"
         android:layout_height="40dp"
+        android:layout_marginStart="10dp"
         android:scaleType="fitCenter" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
+        android:layout_marginStart="8dp"
         android:layout_weight="1"
+        android:duplicateParentState="true"
         android:orientation="vertical">
 
         <TextView
             android:id="@+id/channel_name"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:duplicateParentState="true"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp" />
+            android:textColor="@color/menu_text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/channel_epg"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:duplicateParentState="true"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/text_secondary"
+            android:textColor="@color/menu_text_secondary"
             android:textSize="15sp" />
 
     </LinearLayout>
 
-    <ImageView
-        android:id="@+id/channel_playing"
-        android:layout_width="18dp"
-        android:layout_height="18dp"
+    <!-- 正在播：主题决定牌子配色（电视包装是金色、标准是白底蓝字） -->
+    <TextView
+        android:id="@+id/channel_live_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
         android:layout_marginEnd="4dp"
-        android:contentDescription="@string/now_playing_desc"
-        android:src="@drawable/ic_now_playing"
+        android:background="@drawable/live_badge_bg"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="2dp"
+        android:text="@string/live_badge"
+        android:textColor="?attr/witvOnLive"
+        android:textSize="13sp"
+        android:textStyle="bold"
         android:visibility="gone" />
 
     <ImageView
@@ -59,12 +82,5 @@
         android:layout_marginEnd="4dp"
         android:src="@drawable/ic_favorite_filled"
         android:visibility="gone" />
-
-    <TextView
-        android:id="@+id/channel_number"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textColor="@color/text_secondary"
-        android:textSize="18sp" />
 
 </LinearLayout>

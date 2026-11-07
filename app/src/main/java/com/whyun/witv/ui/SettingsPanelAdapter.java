@@ -19,6 +19,8 @@ import com.whyun.witv.R;
 import com.whyun.witv.data.db.entity.ChannelSource;
 import com.whyun.witv.data.db.entity.M3USource;
 import com.whyun.witv.player.MulticastUrlUtil;
+import com.whyun.witv.data.AppLanguage;
+import com.whyun.witv.data.AppTheme;
 import com.whyun.witv.player.PlaybackDecoderMode;
 import com.whyun.witv.server.QrCodeUtil;
 
@@ -41,6 +43,8 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
     static final int VT_SOURCE_TIMEOUT = 7;
     static final int VT_MULTICAST_PROXY = 8;
     static final int VT_DECODER_MODE = 9;
+    static final int VT_LANGUAGE = 10;
+    static final int VT_THEME = 11;
 
     public abstract static class Row {
         abstract int viewType();
@@ -139,6 +143,47 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         @Override
         int viewType() {
             return VT_DECODER_MODE;
+        }
+    }
+
+    /** 界面主题单选行 */
+    public static final class ThemeRow extends Row {
+        final AppTheme theme;
+        final String title;
+        final String description;
+        final boolean selected;
+
+        public ThemeRow(AppTheme theme, String title, String description, boolean selected) {
+            this.theme = theme;
+            this.title = title;
+            this.description = description;
+            this.selected = selected;
+        }
+
+        @Override
+        int viewType() {
+            return VT_THEME;
+        }
+    }
+
+    /** 界面语言单选行 */
+    public static final class LanguageRow extends Row {
+        final AppLanguage language;
+        final String title;
+        final String descriptionOrNull;
+        final boolean selected;
+
+        public LanguageRow(AppLanguage language, String title, String descriptionOrNull,
+                           boolean selected) {
+            this.language = language;
+            this.title = title;
+            this.descriptionOrNull = descriptionOrNull;
+            this.selected = selected;
+        }
+
+        @Override
+        int viewType() {
+            return VT_LANGUAGE;
         }
     }
 
@@ -241,6 +286,10 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
         void onSaveUdpxyProxy(String proxyBase);
 
         void onPlaybackDecoderMode(PlaybackDecoderMode mode);
+
+        void onAppLanguage(AppLanguage language);
+
+        void onAppTheme(AppTheme theme);
     }
 
     private List<Row> rows = Collections.emptyList();
@@ -275,6 +324,8 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
             case VT_STREAM:
             case VT_SOURCE_TIMEOUT:
             case VT_DECODER_MODE:
+            case VT_LANGUAGE:
+            case VT_THEME:
                 return new StreamVH(inf.inflate(R.layout.item_settings_stream_row, parent, false));
             case VT_EPG:
                 return new EpgVH(inf.inflate(R.layout.item_settings_epg, parent, false));
@@ -304,6 +355,10 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
                 ((StreamVH) holder).bind((StreamRow) row, listener);
             } else if (row instanceof DecoderModeRow) {
                 ((StreamVH) holder).bind((DecoderModeRow) row, listener);
+            } else if (row instanceof LanguageRow) {
+                ((StreamVH) holder).bind((LanguageRow) row, listener);
+            } else if (row instanceof ThemeRow) {
+                ((StreamVH) holder).bind((ThemeRow) row, listener);
             } else {
                 ((StreamVH) holder).bind((SourceTimeoutRow) row, listener);
             }
@@ -438,6 +493,46 @@ public class SettingsPanelAdapter extends RecyclerView.Adapter<RecyclerView.View
                 }
                 if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
                     listener.onPlaybackDecoderMode(row.mode);
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        void bind(LanguageRow row, Listener listener) {
+            label.setText(row.title);
+            if (row.descriptionOrNull != null) {
+                url.setText(row.descriptionOrNull);
+                url.setVisibility(View.VISIBLE);
+            } else {
+                url.setVisibility(View.GONE);
+            }
+            currentBadge.setVisibility(row.selected ? View.VISIBLE : View.GONE);
+            itemView.setOnClickListener(v -> listener.onAppLanguage(row.language));
+            itemView.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                    return false;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                    listener.onAppLanguage(row.language);
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        void bind(ThemeRow row, Listener listener) {
+            label.setText(row.title);
+            url.setText(row.description);
+            url.setVisibility(View.VISIBLE);
+            currentBadge.setVisibility(row.selected ? View.VISIBLE : View.GONE);
+            itemView.setOnClickListener(v -> listener.onAppTheme(row.theme));
+            itemView.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                    return false;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                    listener.onAppTheme(row.theme);
                     return true;
                 }
                 return false;

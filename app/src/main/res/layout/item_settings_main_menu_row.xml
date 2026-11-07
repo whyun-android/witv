@@ -14,7 +14,7 @@
         android:id="@+id/main_menu_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="@color/text_primary"
+        android:textColor="?attr/witvTextPrimary"
         android:textSize="17sp"
         android:textStyle="bold" />
 

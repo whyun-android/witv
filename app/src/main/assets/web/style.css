@@ -18,8 +18,24 @@ body {
 }
 
 header {
+    position: relative;
     text-align: center;
     margin-bottom: 32px;
+}
+
+.lang-toggle {
+    position: absolute;
+    top: 0;
+    right: 0;
+}
+
+/* 手机宽度下标题会和右上角按钮重叠，改成单独一行靠右 */
+@media (max-width: 600px) {
+    .lang-toggle {
+        position: static;
+        display: block;
+        margin: 0 0 8px auto;
+    }
 }
 
 header h1 {
@@ -86,6 +102,141 @@ input:focus {
 
 .input-row input {
     flex: 1;
+}
+
+.input-row-end {
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+/* EPG：直播源内 / 自定义两个地址并列，开关决定用哪个，实际生效的那个描蓝边、标「使用中」 */
+.epg-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.epg-head-title {
+    font-size: 14px;
+    color: #b0bec5;
+}
+
+.epg-option {
+    padding: 12px 14px;
+    border: 1px solid #263238;
+    border-radius: 8px;
+    background: #0d1b2a;
+    margin-bottom: 8px;
+    transition: border-color 0.2s;
+}
+
+.epg-option.in-use {
+    border-color: #42a5f5;
+}
+
+.epg-option-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.form-group .epg-option-name {
+    display: inline;
+    margin: 0;
+    font-size: 13px;
+    color: #90a4ae;
+}
+
+.epg-active-tag {
+    display: none;
+    font-size: 12px;
+    padding: 1px 8px;
+    border-radius: 4px;
+    background: #0d47a1;
+    color: #bbdefb;
+}
+
+.epg-option.in-use .epg-active-tag {
+    display: inline-block;
+}
+
+.epg-readonly {
+    font-size: 15px;
+    color: #eceff1;
+    word-break: break-all;
+    padding: 2px 0;
+}
+
+.epg-readonly.is-empty {
+    color: #546e7a;
+}
+
+.epg-hint {
+    font-size: 13px;
+    color: #ffb74d;
+    min-height: 0;
+}
+
+.epg-hint:empty {
+    display: none;
+}
+
+/* 开关：原生 checkbox 做底，键盘 / 读屏都能用 */
+.form-group label.switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    cursor: pointer;
+    color: #eceff1;
+    font-size: 14px;
+    user-select: none;
+}
+
+.switch input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+}
+
+.switch-track {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    background: #37474f;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.switch-track::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #eceff1;
+    transition: transform 0.2s;
+}
+
+.switch input:checked + .switch-track {
+    background: #1e88e5;
+}
+
+.switch input:checked + .switch-track::after {
+    transform: translateX(18px);
+}
+
+.switch input:focus-visible + .switch-track {
+    outline: 2px solid #42a5f5;
+    outline-offset: 2px;
 }
 
 .btn {

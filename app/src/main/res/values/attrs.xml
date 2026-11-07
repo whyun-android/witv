@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 界面主题属性：布局 / drawable / 代码都通过这些属性取色，切换主题只需换 Activity 的 theme -->
+
+    <!-- 整页背景（设置页、播放页无视频时） -->
+    <attr name="witvWindowBg" format="color" />
+    <!-- 设置页左侧主菜单栏 -->
+    <attr name="witvSidebarBg" format="color" />
+    <!-- 频道菜单：分组栏 / 频道+节目单栏 -->
+    <attr name="witvMenuGroupsBg" format="color" />
+    <attr name="witvMenuListBg" format="color" />
+    <attr name="witvMenuEpgBg" format="color" />
+    <!-- 频道菜单右侧露出视频的遮罩 -->
+    <attr name="witvMenuScrim" format="color" />
+    <!-- 播放页浮层（节目信息条、网速、切换提示、状态卡片） -->
+    <attr name="witvOverlayBg" format="color" />
+    <!-- 全屏遮罩（如无播放源提示背后） -->
+    <attr name="witvFullScrim" format="color" />
+
+    <!-- 卡片 / 输入框 / 非焦点按钮 -->
+    <attr name="witvCardBg" format="color" />
+    <attr name="witvCardStroke" format="color" />
+
+    <!-- 焦点：底色、描边、焦点行上的文字和图标 -->
+    <attr name="witvFocusBg" format="color" />
+    <attr name="witvFocusStroke" format="color" />
+    <attr name="witvOnFocus" format="color" />
+    <attr name="witvOnFocusSecondary" format="color" />
+    <!-- 焦点行左侧强调条（电视台包装的红色号码块；标准做法里与焦点底色相同即不可见） -->
+    <attr name="witvFocusAccent" format="color" />
+    <!-- 设置行、按钮的焦点底色：上面的文字固定为白色，所以必须是深色；
+         电视台包装的白色字幕条只用于频道菜单 -->
+    <attr name="witvControlFocusBg" format="color" />
+    <!-- 选中（非焦点）行 -->
+    <attr name="witvSelectedBg" format="color" />
+
+    <!-- 文字 -->
+    <attr name="witvTextPrimary" format="color" />
+    <attr name="witvTextSecondary" format="color" />
+    <!-- 强调色：复选框、节目单里正在播的那一条 -->
+    <attr name="witvAccent" format="color" />
+    <!-- 主操作按钮（保存）平时的底色 -->
+    <attr name="witvPrimaryButtonBg" format="color" />
+    <!-- 「正在播出 / 已激活」等状态色 -->
+    <attr name="witvLive" format="color" />
+    <!-- 「当前」等状态徽章上的文字（徽章底色为 witvLive） -->
+    <attr name="witvOnLive" format="color" />
+
+    <!-- 频道菜单的行圆角（电视包装 8dp / 标准 12dp） -->
+    <attr name="witvMenuRowRadius" format="dimension" />
+    <!-- 频道菜单：行首号码列的宽度（电视包装是整块门牌号 52dp，标准是窄号码栏 32dp） -->
+    <attr name="witvChannelNumberWidth" format="dimension" />
+    <!-- 频道菜单：号码文字样式（字号 / 字重 / 颜色随主题换） -->
+    <attr name="witvChannelNumberStyle" format="reference" />
+    <!-- 号码处于焦点行时的颜色（电视包装：红色号码块上的白字） -->
+    <attr name="witvOnFocusNumber" format="color" />
+    <!-- 节目单栏的列表分隔线 -->
+    <attr name="witvEpgDivider" format="color" />
+    <!-- 节目单里当前节目的呈现：block=整块高亮＋牌子＋进度条，text=加粗＋时间变色 -->
+    <attr name="witvEpgCurrentStyle" format="enum">
+        <enum name="block" value="0" />
+        <enum name="text" value="1" />
+    </attr>
+</resources>

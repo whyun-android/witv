@@ -7,5 +7,5 @@
     android:focusableInTouchMode="true"
     android:paddingHorizontal="16dp"
     android:paddingVertical="14dp"
-    android:textColor="@color/text_primary"
+    android:textColor="?attr/witvTextPrimary"
     android:textSize="16sp" />

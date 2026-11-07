@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 节目单里的一行。电视包装主题的「当前节目」会把整行铺上底色，再加牌子与进度条；
+     标准主题只加粗、时间变色，所以进度条那一行留着不显示（见 witvEpgCurrentStyle）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/epg_program_row_bg"
+    android:orientation="vertical"
+    android:paddingVertical="10dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/epg_program_time"
+            android:layout_width="60dp"
+            android:layout_height="wrap_content"
+            android:textColor="?attr/witvTextSecondary"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/epg_program_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="?attr/witvTextPrimary"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/epg_program_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/live_badge_bg"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="1dp"
+            android:text="@string/epg_live_badge"
+            android:textColor="?attr/witvOnLive"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/epg_program_progress_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <!-- 与上面的时间列对齐（60dp + 16dp 间距） -->
+        <View
+            android:layout_width="76dp"
+            android:layout_height="1dp" />
+
+        <LinearLayout
+            android:id="@+id/epg_program_progress"
+            android:layout_width="0dp"
+            android:layout_height="4dp"
+            android:layout_weight="1"
+            android:background="?attr/witvWindowBg"
+            android:orientation="horizontal">
+
+            <View
+                android:id="@+id/epg_program_progress_fill"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:background="?attr/witvAccent" />
+
+            <View
+                android:id="@+id/epg_program_progress_rest"
+                android:layout_width="0dp"
+                android:layout_height="match_parent" />
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>

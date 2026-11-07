@@ -21,7 +21,26 @@ final class MediaInfoFormatter {
     /** 如 hvc1.1.6.L120.90 / hev1.x.x.x.x */
     private static final Pattern HEV1_CODECS = Pattern.compile("(?i)(hvc1|hev1)\\.");
 
+    /**
+     * 编码描述是否输出中文。描述在多处静态拼接、拿不到 Context，
+     * 由 PlayerActivity 在 onCreate 中按当前界面语言设置（切换语言会重建 Activity）。
+     */
+    private static volatile boolean chinese = true;
+
     private MediaInfoFormatter() {
+    }
+
+    static void setChinese(boolean value) {
+        chinese = value;
+    }
+
+    private static String t(String zh, String en) {
+        return chinese ? zh : en;
+    }
+
+    /** 标签与值之间的分隔符：中文全角冒号，英文半角冒号加空格 */
+    private static String sep() {
+        return chinese ? "：" : ": ";
     }
 
     static Format[] getSelectedVideoAudioFormats(ExoPlayer player) {
@@ -91,7 +110,7 @@ final class MediaInfoFormatter {
             return "AV1";
         }
         if (trimmed.regionMatches(true, 0, "mp4v", 0, 4)) {
-            return "MPEG-4 Part 2 视频";
+            return t("MPEG-4 Part 2 视频", "MPEG-4 Part 2 Video");
         }
         return null;
     }
@@ -120,23 +139,23 @@ final class MediaInfoFormatter {
     private static String h264ProfileName(int profileIdc) {
         switch (profileIdc) {
             case 66:
-                return "基准档次";
+                return t("基准档次", "Baseline");
             case 77:
-                return "主要档次";
+                return t("主要档次", "Main");
             case 88:
-                return "扩展档次";
+                return t("扩展档次", "Extended");
             case 100:
-                return "高级档次";
+                return t("高级档次", "High");
             case 110:
-                return "高级 10 位";
+                return t("高级 10 位", "High 10");
             case 122:
-                return "高级 4:2:2";
+                return t("高级 4:2:2", "High 4:2:2");
             case 144:
-                return "高级 4:4:4";
+                return t("高级 4:4:4", "High 4:4:4");
             case 244:
-                return "高级 4:4:4（预测）";
+                return t("高级 4:4:4（预测）", "High 4:4:4 Predictive");
             default:
-                return "档次 " + profileIdc;
+                return t("档次 ", "Profile ") + profileIdc;
         }
     }
 
@@ -151,7 +170,7 @@ final class MediaInfoFormatter {
         if (major <= 0) {
             return null;
         }
-        return major + "." + minor + " 等级";
+        return chinese ? major + "." + minor + " 等级" : "Level " + major + "." + minor;
     }
 
     private static String friendlyAudioCodecsString(String codecs, String mime) {
@@ -167,21 +186,21 @@ final class MediaInfoFormatter {
                     int obj = Integer.parseInt(parts[2], 10);
                     switch (obj) {
                         case 1:
-                            return "AAC（主档次）";
+                            return t("AAC（主档次）", "AAC Main");
                         case 2:
-                            return "AAC（常用，LC）";
+                            return t("AAC（常用，LC）", "AAC-LC");
                         case 3:
-                            return "AAC（SSR）";
+                            return t("AAC（SSR）", "AAC SSR");
                         case 4:
-                            return "AAC（LTP）";
+                            return t("AAC（LTP）", "AAC LTP");
                         case 5:
-                            return "AAC（HE / 高效）";
+                            return t("AAC（HE / 高效）", "HE-AAC");
                         case 6:
-                            return "AAC（可扩展）";
+                            return t("AAC（可扩展）", "AAC Scalable");
                         case 17:
-                            return "AAC（低延迟）";
+                            return t("AAC（低延迟）", "AAC-LD");
                         case 32:
-                            return "MPEG-4 音频";
+                            return t("MPEG-4 音频", "MPEG-4 Audio");
                         default:
                             return "AAC";
                     }
@@ -192,10 +211,10 @@ final class MediaInfoFormatter {
             return "AAC";
         }
         if (lower.contains("ac-3") || lower.contains("ac3")) {
-            return "杜比数字（AC-3）";
+            return t("杜比数字（AC-3）", "Dolby Digital (AC-3)");
         }
         if (lower.contains("ec-3") || lower.contains("eac3")) {
-            return "杜比数字 Plus（E-AC-3）";
+            return t("杜比数字 Plus（E-AC-3）", "Dolby Digital Plus (E-AC-3)");
         }
         if (lower.contains("opus")) {
             return "Opus";
@@ -232,7 +251,7 @@ final class MediaInfoFormatter {
             return "VP8";
         }
         if (MimeTypes.VIDEO_MPEG2.equals(mime)) {
-            return "MPEG-2 视频";
+            return t("MPEG-2 视频", "MPEG-2 Video");
         }
         if (!video) {
             if (MimeTypes.AUDIO_AAC.equals(mime) || mime.contains("aac")) {
@@ -242,10 +261,10 @@ final class MediaInfoFormatter {
                 return "MP3";
             }
             if (MimeTypes.AUDIO_AC3.equals(mime) || MimeTypes.AUDIO_E_AC3.equals(mime)) {
-                return "杜比数字";
+                return t("杜比数字", "Dolby Digital");
             }
             if (MimeTypes.AUDIO_RAW.equals(mime) || mime.contains("pcm")) {
-                return "PCM 未压缩";
+                return t("PCM 未压缩", "PCM (uncompressed)");
             }
         }
         int slash = mime.indexOf('/');
@@ -291,7 +310,7 @@ final class MediaInfoFormatter {
 
         int vw = vs.width;
         int vh = vs.height;
-        videoSb.append(labelResolution).append('：');
+        videoSb.append(labelResolution).append(sep());
         if (vw > 0 && vh > 0) {
             videoSb.append(vw).append('×').append(vh);
             if (vs.pixelWidthHeightRatio != 1.0f
@@ -306,12 +325,12 @@ final class MediaInfoFormatter {
         }
         videoSb.append('\n');
 
-        videoSb.append(labelVideoCodec).append('：').append(videoCodecLabel(vf));
+        videoSb.append(labelVideoCodec).append(sep()).append(videoCodecLabel(vf));
 
         StringBuilder audioSb = new StringBuilder();
-        audioSb.append(labelAudioCodec).append('：').append(audioCodecLabel(af)).append('\n');
+        audioSb.append(labelAudioCodec).append(sep()).append(audioCodecLabel(af)).append('\n');
 
-        audioSb.append(labelSampleRate).append('：');
+        audioSb.append(labelSampleRate).append(sep());
         if (af != null && af.sampleRate != Format.NO_VALUE && af.sampleRate > 0) {
             audioSb.append(af.sampleRate).append(" Hz");
         } else {
@@ -319,7 +338,7 @@ final class MediaInfoFormatter {
         }
         audioSb.append('\n');
 
-        audioSb.append(labelChannels).append('：');
+        audioSb.append(labelChannels).append(sep());
         if (af != null && af.channelCount != Format.NO_VALUE && af.channelCount > 0) {
             audioSb.append(af.channelCount);
         } else {

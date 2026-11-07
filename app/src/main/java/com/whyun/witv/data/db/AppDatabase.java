@@ -24,7 +24,7 @@ import com.whyun.witv.data.db.entity.M3USource;
 
 @Database(
     entities = {M3USource.class, Channel.class, ChannelSource.class, EpgProgram.class, FavoriteChannel.class, EpgChannel.class},
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 public abstract class AppDatabase extends RoomDatabase {
@@ -53,6 +53,20 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
+    /**
+     * EPG 地址拆成「直播源内 / 自定义」两份 + 切换开关。旧版只有一个 epgUrl，分不清是 M3U 写的还是用户填的，
+     * 两边都先存一份：下次刷新直播源会把 m3uEpgUrl 换成真正的 x-tvg-url，用户原来填的仍留在 customEpgUrl 里可以切回去。
+     */
+    static final Migration MIGRATION_3_4 = new Migration(3, 4) {
+        @Override
+        public void migrate(@NonNull SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE `m3u_sources` ADD COLUMN `m3uEpgUrl` TEXT");
+            database.execSQL("ALTER TABLE `m3u_sources` ADD COLUMN `customEpgUrl` TEXT");
+            database.execSQL("ALTER TABLE `m3u_sources` ADD COLUMN `useCustomEpg` INTEGER NOT NULL DEFAULT 0");
+            database.execSQL("UPDATE `m3u_sources` SET `m3uEpgUrl` = `epgUrl`, `customEpgUrl` = `epgUrl`");
+        }
+    };
+
     public static AppDatabase getInstance(Context context) {
         if (INSTANCE == null) {
             synchronized (AppDatabase.class) {
@@ -62,7 +76,7 @@ public abstract class AppDatabase extends RoomDatabase {
                         AppDatabase.class,
                         "witv_database"
                     )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build();
                 }
             }
