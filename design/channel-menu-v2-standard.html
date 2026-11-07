@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>WiTV · 频道菜单 · 标准（半透明定稿）</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* 原稿 1920×1080 ＝ 电视上 1280×720dp（密度 1.5）。本版只改一处：面板由实色改为半透明。 */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#000;color:#fff;
+  font-family:"Noto Sans SC","Microsoft YaHei",sans-serif}
+
+.video{position:absolute;left:0;top:0;width:1920px;height:1080px;background:
+ radial-gradient(ellipse 620px 380px at 480px 300px,rgba(255,255,255,.92),rgba(255,255,255,0) 70%),
+ radial-gradient(ellipse 520px 340px at 170px 430px,rgba(255,246,225,.62),rgba(255,246,230,0) 70%),
+ radial-gradient(ellipse 560px 320px at 1160px 840px,rgba(255,226,170,.5),rgba(255,226,170,0) 70%),
+ radial-gradient(ellipse 520px 320px at 1660px 190px,rgba(255,255,255,.72),rgba(255,255,255,0) 70%),
+ linear-gradient(168deg,#101a14 0%,#1d3a26 40%,#3d7a4a 68%,#12281a 100%)}
+.scrim{position:absolute;left:1380px;top:0;width:540px;height:1080px;background:rgba(0,0,0,.40)}
+/* 视频里的两块亮牌：有硬边，半透明才看得出来 */
+.board{position:absolute;border-radius:6px}
+.b1{left:250px;top:96px;width:520px;height:118px;background:linear-gradient(100deg,rgba(255,255,255,.92),rgba(226,240,255,.78))}
+.b2{left:1450px;top:706px;width:400px;height:96px;background:linear-gradient(100deg,rgba(255,248,232,.85),rgba(255,255,255,.95))}
+
+.panel{position:absolute;left:0;top:0;width:1380px;height:1080px;display:flex}
+
+.groups{width:330px;background:rgba(12,18,24,.85);padding:36px 18px}
+.g{height:96px;display:flex;align-items:center;padding:0 24px;font-size:28px;color:#B0BEC5;border-radius:8px;margin-bottom:6px}
+.g.sel{background:#4D42A5F5;color:#fff;font-weight:700}
+
+.list{width:510px;background:rgba(16,24,32,.78);padding:30px 18px}
+.row{height:114px;display:flex;align-items:center;gap:22px;padding:0 22px;border-radius:12px;margin-bottom:6px;position:relative}
+/* 稿里号码是右侧对齐的窄栏，不用门牌块 */
+.no{flex:none;width:48px;text-align:right;font-size:27px;color:#B0BEC5;font-variant-numeric:tabular-nums}
+.logo{flex:none;width:72px;height:44px;border-radius:8px;background:rgba(176,190,197,.18)}
+.body{flex:1;min-width:0}
+.name{font-size:30px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{font-size:21px;color:#B0BEC5;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 焦点行：蓝色圆角块 + 投影，无白描边 */
+.row.focus{background:#1E88E5;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.row.focus .no,.row.focus .sub{color:#E3ECFF}
+.dot{position:absolute;right:22px;top:50%;transform:translateY(-50%);width:12px;height:12px;border-radius:50%;background:#42A5F5}
+
+.epg{flex:1;min-width:0;padding:36px;position:relative;background:rgba(16,24,32,.78);border-left:2px solid rgba(255,255,255,.12)}
+.ch{font-size:36px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.date{font-size:22px;color:#9AA6B2;margin:24px 0 10px}
+.p{display:flex;gap:24px;padding:16px 0;font-size:26px;white-space:nowrap;border-top:1px solid rgba(255,255,255,.10)}
+.p .t{width:90px;font-weight:500;color:#9AA6B2;flex:none}
+.p > span:nth-child(2){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.p.past{color:rgba(255,255,255,.45)}
+.p.cur{font-weight:700}
+.p.cur .t{color:#42A5F5}
+.hint{position:absolute;left:36px;bottom:32px;font-size:22px;color:#9AA6B2}
+</style>
+</head>
+<body>
+<div class="video"></div>
+<div class="board b1"></div>
+<div class="board b2"></div>
+<div class="scrim"></div>
+<div class="panel">
+  <div class="groups">
+    <div class="g">全部频道</div><div class="g">收藏</div><div class="g sel">央视</div>
+    <div class="g">卫视</div><div class="g">北京</div><div class="g">4K 超高清</div>
+  </div>
+  <div class="list">
+    <div class="row"><span class="no">1</span><span class="logo"></span><div class="body"><div class="name">CCTV-1 综合</div><div class="sub">新闻30分</div></div></div>
+    <div class="row"><span class="no">2</span><span class="logo"></span><div class="body"><div class="name">CCTV-2 财经</div><div class="sub">正点财经</div></div></div>
+    <div class="row"><span class="no">3</span><span class="logo"></span><div class="body"><div class="name">CCTV-3 综艺</div><div class="sub">星光大道</div></div></div>
+    <div class="row"><span class="no">5</span><span class="logo"></span><div class="body"><div class="name">CCTV-5 体育</div><div class="sub">体育新闻</div></div><span class="dot"></span></div>
+    <div class="row focus"><span class="no">6</span><span class="logo"></span><div class="body"><div class="name">CCTV-5+ 体育赛事</div><div class="sub">CBA 常规赛 广东—辽宁</div></div></div>
+    <div class="row"><span class="no">7</span><span class="logo"></span><div class="body"><div class="name">CCTV-6 电影</div><div class="sub">故事片：我和我的祖国</div></div></div>
+    <div class="row"><span class="no">8</span><span class="logo"></span><div class="body"><div class="name">CCTV-8 电视剧</div><div class="sub">电视剧：人世间</div></div></div>
+    <div class="row"><span class="no">9</span><span class="logo"></span><div class="body"><div class="name">CCTV-9 纪录</div><div class="sub">自然传奇</div></div></div>
+  </div>
+  <div class="epg">
+    <div class="ch">CCTV-5+ 体育赛事</div>
+    <div class="date">今天 · 11月7日 星期六</div>
+    <div class="p past"><span class="t">17:00</span><span>健身动起来</span></div>
+    <div class="p cur"><span class="t">18:30</span><span>CBA 常规赛 广东—辽宁</span></div>
+    <div class="p"><span class="t">20:35</span><span>天下足球</span></div>
+    <div class="p"><span class="t">22:00</span><span>赛事集锦</span></div>
+    <div class="p"><span class="t">23:30</span><span>NBA 精选</span></div>
+    <div class="hint">←→ 切换分组 / 频道　确认 播放　长按 收藏</div>
+  </div>
+</div>
+</body>
+</html>

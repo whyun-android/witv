@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiTV 频道菜单 · 视觉方向预览</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0b0d10;color:#e8eaed;font-family:"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;padding:32px 40px 64px}
+h1{font-size:24px;font-weight:700}
+.lead{color:#9aa1ab;font-size:14px;margin:6px 0 28px}
+h2{font-size:15px;font-weight:600;color:#9aa1ab;margin:28px 0 14px;letter-spacing:.02em}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:22px}
+.card{background:#14171c;border:1px solid #232830;border-radius:12px;overflow:hidden}
+.shot{position:relative;aspect-ratio:16/9;overflow:hidden;cursor:zoom-in;background:#000}
+.shot iframe{position:absolute;left:0;top:0;width:1920px;height:1080px;border:0;transform-origin:0 0;pointer-events:none}
+.shot:focus-visible{outline:3px solid #4C8DFF;outline-offset:-3px}
+.meta{padding:14px 16px 16px}
+.row{display:flex;align-items:center;gap:10px}
+.label{font-size:17px;font-weight:700}
+.kicker{font-size:11px;font-weight:700;color:#0b0d10;background:#9aa1ab;border-radius:4px;padding:2px 6px}
+.kicker.pick{background:#E0A526}.kicker.roll{background:#4C8DFF}.kicker.canon{background:#c9ccd1}
+.sw{display:flex;gap:4px;margin-left:auto}
+.sw i{width:16px;height:16px;border-radius:4px;border:1px solid #ffffff22}
+.thesis{font-size:13px;line-height:1.6;color:#c4c9d0;margin-top:8px}
+.risk{font-size:12px;line-height:1.6;color:#8a919b;margin-top:6px}
+.file{font-size:11px;color:#5f6670;margin-top:8px;font-family:Consolas,monospace}
+.view{position:fixed;inset:0;background:#000d;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:10}
+.view.show{display:flex}
+.stage{position:relative;overflow:hidden;background:#000;box-shadow:0 10px 60px #000}
+.stage iframe{position:absolute;left:0;top:0;width:1920px;height:1080px;border:0;transform-origin:0 0}
+.bar{display:flex;align-items:center;gap:16px;color:#c4c9d0;font-size:14px;margin-top:14px}
+.bar b{color:#fff;font-size:16px}
+.bar button{background:#232830;color:#e8eaed;border:1px solid #333a44;border-radius:8px;padding:6px 14px;font:inherit;cursor:pointer}
+.bar button:hover{background:#2c323b}
+</style>
+</head>
+<body>
+<h1>WiTV 频道菜单 · 视觉方向预览</h1>
+<p class="lead">同一画面：播放中打开频道菜单（原稿 1920×1080）。点卡片全屏查看，←/→ 切换，Esc 关闭。</p>
+
+<h2>第二轮 · 更稳的一组（最新）</h2>
+<div class="grid" id="r2"></div>
+
+<h2>第一轮</h2>
+<div class="grid" id="r1"></div>
+
+<div class="view" id="view" role="dialog" aria-modal="true" aria-label="全屏预览">
+  <div class="stage" id="stage"><iframe id="big" title="设计稿全屏预览"></iframe></div>
+  <div class="bar">
+    <button type="button" id="prev" aria-label="上一个">← 上一个</button>
+    <b id="vlabel"></b><span id="vidx"></span>
+    <button type="button" id="next" aria-label="下一个">下一个 →</button>
+    <button type="button" id="close">关闭 Esc</button>
+  </div>
+</div>
+
+<script>
+const BASE = '../.impeccable/mocks/decision/';
+const MOCKS = [
+  { r:'r2', f:'grounded-subway.html', label:'地铁导视', palette:['#1C1F24','#C23A30','#2E6DB4','#3A9A5B','#F4F4F2'],
+    thesis:'每个分组是一条线路，有自己的线路色；频道沿色线排成站点，焦点行整行填满线路色，正在看的频道挂「正在看」牌子。',
+    risk:'风险：分组多了线路色不够用或撞色，需要一套轮换色。' },
+  { r:'r2', f:'grounded-broadcast.html', label:'电视台包装', palette:['#081434','#13265C','#D7261E','#F2B705','#FFFFFF'],
+    thesis:'焦点行是电视下方字幕条：红色斜切号码块加白色台名条；正在播用金色「直播中」，节目单按时间顺序排，当前节目原位高亮并带进度条。',
+    risk:'风险：白色字幕条面积大，暗场景偏亮；斜切多了显得花哨。' },
+  { r:'r2', f:'canon.html', label:'品类标准做法', kicker:['canon','对标 TiviMate / Apple TV'], palette:['#0F1115','#1B1E24','#4C8DFF','#FFFFFF','#A7AEBB'],
+    thesis:'深色面板，焦点行蓝色圆角高亮带台标位，正在播用蓝点。',
+    risk:'风险：和其他播放器看起来一样。' },
+  { r:'r1', f:'assigned.html', label:'搪瓷门牌', kicker:['roll','抽签选中'], palette:['#0E1B2E','#2457A6','#F4F1E8','#C8322B','#9DB3D1'],
+    thesis:'频道号就是门牌号：蓝底白边的搪瓷牌，焦点行是亮蓝牌带内嵌白边；搪瓷红只留给「正在播」。',
+    risk:'风险：白边和圆角用多了显得复古装饰。' },
+  { r:'r1', f:'model-pick.html', label:'广播电视报', kicker:['pick','工具推荐'], palette:['#EFE9DC','#1A1A1A','#C1272D','#6B6257'],
+    thesis:'借报纸节目表的排版：红色 WiTV 报头、细线分栏，焦点行反白成黑底。',
+    risk:'风险：浅色面板晚上压在暗画面上刺眼。' },
+  // 「短视频式全屏」已淘汰：布局不适合电视遥控器操作，原稿仍在 challenger-feed.html
+];
+
+function card(m, i) {
+  const k = m.kicker ? `<span class="kicker ${m.kicker[0]}">${m.kicker[1]}</span>` : '';
+  const sw = m.palette.map(c => `<i style="background:${c}" title="${c}"></i>`).join('');
+  return `<div class="card">
+    <div class="shot" tabindex="0" role="button" aria-label="全屏查看 ${m.label}" data-i="${i}">
+      <iframe src="${BASE + m.f}" loading="lazy" tabindex="-1" title="${m.label}"></iframe>
+    </div>
+    <div class="meta">
+      <div class="row"><span class="label">${m.label}</span>${k}<span class="sw">${sw}</span></div>
+      <p class="thesis">${m.thesis}</p>
+      <p class="risk">${m.risk}</p>
+      <p class="file">.impeccable/mocks/decision/${m.f}</p>
+    </div>
+  </div>`;
+}
+MOCKS.forEach((m, i) => document.getElementById(m.r).insertAdjacentHTML('beforeend', card(m, i)));
+
+// 把 1920×1080 的原稿等比缩放进容器
+function fit(box, frame) {
+  frame.style.transform = `scale(${box.clientWidth / 1920})`;
+}
+const shots = [...document.querySelectorAll('.shot')];
+function fitAll() { shots.forEach(s => fit(s, s.querySelector('iframe'))); }
+new ResizeObserver(fitAll).observe(document.body);
+
+const view = document.getElementById('view'), stage = document.getElementById('stage'), big = document.getElementById('big');
+let cur = 0;
+function sizeStage() {
+  const w = Math.min(innerWidth * 0.94, (innerHeight - 80) * 16 / 9);
+  stage.style.width = w + 'px';
+  stage.style.height = (w * 9 / 16) + 'px';
+  fit(stage, big);
+}
+function open(i) {
+  cur = (i + MOCKS.length) % MOCKS.length;
+  big.src = BASE + MOCKS[cur].f;
+  document.getElementById('vlabel').textContent = MOCKS[cur].label;
+  document.getElementById('vidx').textContent = `${cur + 1} / ${MOCKS.length}`;
+  view.classList.add('show');
+  sizeStage();
+}
+function close() { view.classList.remove('show'); shots[cur].focus(); }
+shots.forEach(s => {
+  s.addEventListener('click', () => open(+s.dataset.i));
+  s.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(+s.dataset.i); } });
+});
+document.getElementById('prev').onclick = () => open(cur - 1);
+document.getElementById('next').onclick = () => open(cur + 1);
+document.getElementById('close').onclick = close;
+view.addEventListener('click', e => { if (e.target === view) close(); });
+addEventListener('keydown', e => {
+  if (!view.classList.contains('show')) return;
+  if (e.key === 'ArrowLeft') open(cur - 1);
+  else if (e.key === 'ArrowRight') open(cur + 1);
+  else if (e.key === 'Escape') close();
+});
+addEventListener('resize', () => { if (view.classList.contains('show')) sizeStage(); });
+</script>
+</body>
+</html>

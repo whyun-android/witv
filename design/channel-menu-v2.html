@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiTV 频道菜单 · 半透明定稿 v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0b0d10;color:#e8eaed;font-family:"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;padding:32px 40px 80px}
+h1{font-size:24px;font-weight:700}
+.lead{color:#9aa1ab;font-size:14px;line-height:1.8;margin:8px 0 0;max-width:1280px}
+.rule{color:#c4c9d0;font-size:13px;line-height:1.8;margin:16px 0 40px;padding:14px 18px;background:#14171c;border-left:3px solid #4C8DFF;border-radius:0 8px 8px 0;max-width:1280px}
+.rule b{color:#fff}
+section{margin-bottom:64px}
+h2{font-size:18px;font-weight:700;display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.tag{font-size:11px;font-weight:700;color:#0b0d10;border-radius:4px;padding:2px 7px}
+.tag.bc{background:#F2B705}
+.tag.std{background:#4C8DFF}
+.sub{color:#8a919b;font-size:13px;line-height:1.7;margin-bottom:14px;max-width:1280px}
+h3{font-size:13px;font-weight:600;color:#9aa1ab;margin:26px 0 10px;letter-spacing:.02em}
+.sw{display:inline-flex;gap:4px;vertical-align:middle;margin-left:6px}
+.sw i{width:15px;height:15px;border-radius:4px;border:1px solid #ffffff26}
+table{border-collapse:collapse;width:100%;max-width:1560px;font-size:13px;line-height:1.65}
+th,td{border-bottom:1px solid #232830;padding:8px 14px 8px 0;text-align:left;vertical-align:top}
+th{color:#8a919b;font-weight:600;font-size:12px}
+td:first-child{color:#e8eaed;white-space:nowrap;padding-right:24px}
+td{color:#c4c9d0}
+code{font-family:Consolas,monospace;font-size:12px;color:#e8eaed;background:#1a1f26;border-radius:4px;padding:1px 5px}
+ul{margin:10px 0 0 18px;max-width:1280px}
+li{color:#c4c9d0;font-size:13px;line-height:1.85}
+li b{color:#fff}
+.note{color:#8a919b;font-size:12px;line-height:1.8;margin-top:12px;max-width:1280px}
+/* 原稿按 1920×1080 原尺寸嵌入，不缩放 */
+.stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:#000;margin:14px 0 20px;box-shadow:0 12px 48px #000b}
+.stage iframe{position:absolute;left:0;top:0;width:1920px;height:1080px;border:0}
+.file{font-size:12px;color:#5f6670;font-family:Consolas,monospace;margin:-8px 0 0}
+</style>
+</head>
+<body>
+
+<h1>WiTV 频道菜单 · 半透明定稿 v2</h1>
+<p class="lead">同一画面：播放中打开频道菜单。两张都是 1920×1080 原稿（＝电视上 1280×720dp），衬底视频故意在面板底下放了一块高亮（最坏情况），用来看半透明下的可读性。</p>
+<div class="rule">
+  <b>这一版只改一处：面板由实色改成半透明。</b>其余设计元素逐条沿用各自方向的稿 ——「电视台包装」沿用 <code>.impeccable/mocks/decision/grounded-broadcast.html</code>（焦点行＝白色字幕条＋红色斜切号码块，正在播＝金色「直播中」，节目单按时间排、当前节目原位高亮带进度条）；「标准」沿用 <code>.impeccable/mocks/decision/canon.html</code>（深色面板，焦点行＝蓝色圆角块，正在播＝蓝点）。<br>
+  半透明沿用实现里的分层，只把三栏拉齐：分组列 85%、频道列与节目单列 78%（现状是 88% / 75% / 88%，三栏深浅不一）。焦点行、当前节目块、正在播牌子保持实色不透明，可读性先由它们兜底。
+</div>
+
+<!-- ==================== 电视台包装 ==================== -->
+<section>
+<h2>电视台包装<span class="tag bc">沿用 grounded-broadcast</span>
+  <span class="sw"><i style="background:#060F28"></i><i style="background:#081434"></i><i style="background:#13265C"></i><i style="background:#D7261E"></i><i style="background:#F2B705"></i><i style="background:#FFFFFF"></i></span>
+</h2>
+<p class="sub">面板统一半透明之后，分组列仍比频道列深一档（稿里的 #060F28 / #081434），节目单列补回稿里的 2px 竖线——实色面板靠底色分栏，半透明之后就靠这条线和焦点行分栏。</p>
+
+<div class="stage"><iframe src="channel-menu-v2-broadcast.html" title="电视台包装 · 半透明定稿"></iframe></div>
+<p class="file">design/channel-menu-v2-broadcast.html</p>
+
+<h3>元素定稿（稿 → dp/sp）</h3>
+<table>
+<tr><th>元素</th><th>稿里的值</th><th>定稿</th><th>令牌 / 落地</th></tr>
+<tr><td>面板三层</td><td>实色<br>分组 #060F28 / 其余 #081434</td><td>分组 <code>rgba(6,15,40,.85)</code><br>频道列·节目单列 <code>rgba(8,20,52,.78)</code></td><td><code>witvMenuGroupsBg</code> → <code>#D9060F28</code><br><code>witvOverlayBg</code> / <code>witvMenuListBg</code> → <code>#C7081434</code></td></tr>
+<tr><td>分栏线</td><td>节目单列左 2px #13265C</td><td>1dp（本机 1.5 倍密度下渲染成约 2px）</td><td>新增，画在节目单列左边</td></tr>
+<tr><td>露出视频的遮罩</td><td>—</td><td><code>rgba(0,8,20,.33)</code> 不变，仍是硬边</td><td><code>witvMenuScrim</code></td></tr>
+<tr><td>焦点行</td><td>白色字幕条铺满整行</td><td>不变，保持实色（半透明下的可读性锚点）</td><td><code>witvFocusBg</code> #FFFFFF</td></tr>
+<tr><td>号码块</td><td>96px 宽 · 34px/900 · 焦点态红底、右缘斜切</td><td>64dp 宽 · 22sp/<b>700</b> · 焦点态斜切保持（上 64dp → 下 52dp）</td><td><code>witvFocusAccent</code> #D7261E</td></tr>
+<tr><td>台名 / 副行</td><td>30px/700 · 22px #AFC0E6（焦点 #3A4B78）</td><td>20sp/<b>700</b> · 15sp，颜色同稿</td><td><code>witvTextSecondary</code> / <code>witvOnFocusSecondary</code></td></tr>
+<tr><td>正在播</td><td>金色「直播中」牌 20px/900 圆角 6px</td><td>13sp/700 圆角 4dp，行尾内边距 11dp</td><td><code>witvLive</code> #F2B705 / <code>witvOnLive</code> #081434</td></tr>
+<tr><td>节目单 · 台名行</td><td>36px/700 + 日期 22px</td><td>24sp/700 + 15sp（「今天 · 11月7日 星期六」运行期算）</td><td>现状 24sp bold 已一致</td></tr>
+<tr><td>节目单 · 列表</td><td>26px，时间列 90px #AFC0E6/500，2px #13265C 分隔线</td><td>17sp；时间列 60dp；1dp 分隔线</td><td>新增（现状是纯文本 TextView）</td></tr>
+<tr><td>节目单 · 当前节目</td><td>#13265C 整块 + 金「正在播出」牌 + 6px 进度条（38%）+ 700 字</td><td>块底 <code>rgba(19,38,92,.80)</code>；牌 12sp/700；进度条 4dp 高；已播 <code>#5E709E</code></td><td><code>witvCardBg</code> #CC13265C（已有）</td></tr>
+<tr><td>圆角 / 提示行</td><td>行 12px；提示 22px #AFC0E6</td><td>行 8dp；提示 15sp，文案「←→ 切换分组 / 频道　确认 播放　长按 收藏」</td><td>现状圆角 6dp、文案带冒号</td></tr>
+</table>
+<p class="note">稿里这一方向没画台标位，本版照稿也没画（标准方向稿里本来就有台标）。要在这套主题下也保留台标，号码块得收到 52dp 才放得下台名——那是元素清单之外的新决定，先没画。</p>
+</section>
+
+<!-- ==================== 标准 ==================== -->
+<section>
+<h2>标准<span class="tag std">沿用 canon</span>
+  <span class="sw"><i style="background:#0C1218"></i><i style="background:#101820"></i><i style="background:#1E88E5"></i><i style="background:#42A5F5"></i><i style="background:#B0BEC5"></i></span>
+</h2>
+<p class="sub">焦点行＝蓝色圆角块（没有白描边，靠蓝块本身和投影立住），正在播＝蓝点，节目单列 1px 细分隔线、当前节目加粗＋时间变蓝。选中分组保留主题蓝 30% 的底色。</p>
+
+<div class="stage"><iframe src="channel-menu-v2-standard.html" title="标准 · 半透明定稿"></iframe></div>
+<p class="file">design/channel-menu-v2-standard.html</p>
+
+<h3>元素定稿（稿 → dp/sp）</h3>
+<table>
+<tr><th>元素</th><th>稿里的值</th><th>定稿</th><th>令牌 / 落地</th></tr>
+<tr><td>面板三层</td><td>实色<br>面板 #0F1115 / 分组 #1B1E24</td><td>分组 <code>rgba(12,18,24,.85)</code><br>频道列·节目单列 <code>rgba(16,24,32,.78)</code></td><td><code>witvMenuGroupsBg</code> #D90C1218（不变）<br>频道列改用节目单列同色：<code>witvMenuListBg</code> → <code>#C7101820</code>（<code>witvOverlayBg</code> 是播放页浮层的，不动）</td></tr>
+<tr><td>分栏线</td><td>节目单列左 1px #2A2A2A</td><td>1dp，色改为 12% 白（实色面板上的 #2A2A2A 半透明后看不见）</td><td>新增</td></tr>
+<tr><td>焦点行</td><td>蓝色圆角块 #4C8DFF 圆角 18px + 投影，无描边</td><td>#1E88E5（主题蓝），圆角 12dp，elevation 约 6dp，<b>去掉白描边</b>；号码与副行转 <code>#E3ECFF</code></td><td><code>witvFocusBg</code>；<code>witvFocusStroke</code> 不再用</td></tr>
+<tr><td>号码</td><td>左栏 48px 右对齐 · 26px #9E9E9E · 等宽数字</td><td>32dp 右对齐 · 18sp/400 · <code>tnum</code></td><td><code>witvTextSecondary</code></td></tr>
+<tr><td>台标</td><td>72×44px 圆角 8px</td><td>40dp（现状），不加底色，真实台标自带透明通道</td><td>现状已一致</td></tr>
+<tr><td>台名 / 副行</td><td>28px/700 · 21px #9E9E9E</td><td>20sp/700 · 15sp #B0BEC5</td><td>现状 20sp/15sp，只补 700</td></tr>
+<tr><td>正在播</td><td>蓝点 12px，行尾</td><td>8dp 圆点，色改主题蓝（现状是绿色三角）</td><td><code>witvLive</code> 由 #4CAF50 改 <code>#FF42A5F5</code></td></tr>
+<tr><td>节目单 · 列表</td><td>台名 36px/700 · 日期 22px · 节目行 25px · 时间列 90px · 1px 分隔线</td><td>24sp/700 · 15sp · 17sp · 时间列 60dp · 1dp 分隔线</td><td>新增（现状是纯文本 TextView）</td></tr>
+<tr><td>节目单 · 当前节目</td><td>加粗 + 时间变蓝，无底色、无进度条</td><td>同稿：700 + 时间 #42A5F5；已播 <code>rgba(255,255,255,.45)</code></td><td>—</td></tr>
+<tr><td>选中分组</td><td>#2A2A2A 中性灰</td><td>保留主题蓝 30% <code>#4D42A5F5</code>，与「标准」主题的蓝色焦点语言一致</td><td><code>witvSelectedBg</code>（不变）</td></tr>
+<tr><td>圆角 / 提示行</td><td>行 18px；提示 21px #9E9E9E</td><td>行 12dp；提示 15sp，文案同包装</td><td>现状圆角 6dp、文案带冒号</td></tr>
+</table>
+</section>
+
+<!-- ==================== 半透明规格 ==================== -->
+<section>
+<h2>半透明规格（两主题共用）</h2>
+<table>
+<tr><th>规则</th><th>说明</th></tr>
+<tr><td>只让面板半透明</td><td>焦点行、当前节目块、正在播牌子保持实色——半透明一旦蔓延到这三处，主信息就会随视频花色浮动。</td></tr>
+<tr><td>分栏靠线和底色</td><td>实色面板时代靠底色深浅分栏；半透明后视频会盖过这点差异，所以节目单列补回稿里的竖线，分组列仍比频道列深一档。不靠提高不透明度来分栏。</td></tr>
+<tr><td>最坏情况对比度（衬底纯白视频）</td><td>频道列 78%——包装主文字 <b>9.2:1</b>、次要文字 <b>5.5:1</b>，标准主 <b>8.9:1</b>、次 <b>5.3:1</b>；分组列 85%——包装主 <b>12.6:1</b>、次 <b>7.5:1</b>。都过 WCAG AA（次要文字 ≥4.5:1 的门槛有富余），不用为了可读性再加遮罩或调高不透明度。</td></tr>
+<tr><td>不做毛玻璃</td><td>N1 这类盒子（Android 7.1、S905）没有便宜的高斯模糊（RenderEffect 要 API 31），半透明下要立住只能靠底色和字重。</td></tr>
+<tr><td>字重上限 700</td><td>稿里的 900（号码块、节目单台名、牌子）在 Android 上要打包一份中文 Black 字重才做得到，APK 会涨十几 MB，为上 F-Droid 不划算。定稿统一 700，层级改由字号与颜色承担。</td></tr>
+<tr><td>面板右缘仍是硬边</td><td>现状（面板与遮罩各占一半，接缝是一条硬竖线）。要软化得给遮罩加一段渐变，那是新元素，这一版没加。</td></tr>
+</table>
+</section>
+
+<!-- ==================== 待补 ==================== -->
+<section>
+<h2>与当前实现的差距（本版之后要补的）</h2>
+<ul>
+<li>字重全是 400：<code>item_channel_card.xml</code>、<code>item_channel_group_card.xml</code> 里没有 <code>textStyle</code>，台名 / 号码 / 选中分组都要 700。</li>
+<li>号码位置反了：现在号码在行尾（18sp 次要色），稿是行首号码块；焦点行现在只在行首加一条 6dp 红条，稿是红底右缘斜切的号码块。</li>
+<li>正在播的标记：现在两套主题都是 18dp 绿色三角（<code>ic_now_playing</code> 里颜色写死 #4CAF50），稿是包装＝金色「直播中」牌、标准＝蓝点。</li>
+<li>节目单栏还是一个纯文本 TextView（当前播出 / 即将播出两行），要做成时间列 + 分隔线的节目列表，当前节目原位高亮（包装另带牌子与进度条）。</li>
+<li>三栏没有分栏线，节目单列左边那条要补。</li>
+<li>行圆角 6dp（稿：包装 8dp、标准 12dp）；标准的焦点行还带着白描边，稿里没有。</li>
+<li>提示文案是「确认：播放」，稿里是「确认 播放」。</li>
+</ul>
+<p class="note">这七条与半透明无关，是落地时被简化掉的部分；改法与影响面另外说明。</p>
+</section>
+
+</body>
+</html>

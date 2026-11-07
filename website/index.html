@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiTV · 给电视盒子用的开源直播播放器</title>
+<meta name="description" content="WiTV 是给 Android TV 和电视盒子用的开源直播播放器：播放你自己的 M3U 直播源，开机就在播，用遥控器换台，在手机上完成设置。">
+<meta property="og:title" content="WiTV · 给电视盒子用的开源直播播放器">
+<meta property="og:description" content="播放你自己的 M3U 直播源。开机就在播，遥控器换台，手机上设置。">
+<meta property="og:image" content="assets/banner.png">
+<link rel="icon" type="image/png" href="assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="#top" aria-label="WiTV">
+    <img src="assets/icon.png" alt="" width="32" height="32">
+    <span>WiTV</span>
+  </a>
+  <nav class="site-nav" aria-label="页面导航">
+    <a href="#setup" data-i18n="nav.setup">三步装好</a>
+    <a href="#features" data-i18n="nav.features">功能</a>
+    <a href="#remote" data-i18n="nav.remote">遥控器</a>
+    <a href="#download" data-i18n="nav.download">下载</a>
+    <a href="https://github.com/whyun-android/witv">GitHub</a>
+  </nav>
+  <button class="lang-btn" type="button" id="langBtn" aria-label="Switch language">EN</button>
+</header>
+
+<main id="top">
+
+  <!-- 首屏：一台能用键盘遥控的电视。画面里的频道与节目都是示意，不对应任何真实直播源 -->
+  <section class="hero">
+    <div class="tv-wrap">
+     <div class="tv-frame">
+      <div class="tv" id="tv" tabindex="0" role="application"
+           aria-label="WiTV 频道菜单演示：用上下方向键换台，左右键切换分组" data-theme="broadcast">
+       <div class="tv-stage-box" id="tvStageBox">
+        <div class="tv-stage" id="tvStage">
+          <div class="tv-video" aria-hidden="true"></div>
+          <div class="tv-panel">
+            <div class="col col-groups" id="tvGroups"></div>
+            <div class="col col-list" id="tvList"></div>
+            <div class="col col-epg">
+              <div class="epg-ch" id="tvEpgName"></div>
+              <div class="epg-date" id="tvEpgDate"></div>
+              <div id="tvEpgList"></div>
+              <div class="epg-hint" data-i18n="tv.hint">↑↓ 换台　←→ 切换分组　确认 播放</div>
+            </div>
+          </div>
+        </div>
+       </div>
+      </div>
+      <!-- 字幕条标题：照着包装主题的焦点行做，红色号码块 + 白条 -->
+      <div class="lower-third">
+        <span class="lt-plate">WiTV</span>
+        <h1 class="lt-bar" data-i18n="hero.title">打开电视，就在播。</h1>
+      </div>
+     </div>
+      <div class="tv-controls">
+        <div class="remote" role="group" aria-label="遥控器">
+          <button type="button" class="key" data-key="up" aria-label="上一个频道">↑</button>
+          <button type="button" class="key" data-key="down" aria-label="下一个频道">↓</button>
+          <button type="button" class="key" data-key="left" aria-label="上一个分组">←</button>
+          <button type="button" class="key" data-key="right" aria-label="下一个分组">→</button>
+        </div>
+        <div class="theme-switch" role="radiogroup" aria-label="界面主题">
+          <button type="button" role="radio" aria-checked="true" data-theme="broadcast" data-i18n="theme.broadcast">电视台包装</button>
+          <button type="button" role="radio" aria-checked="false" data-theme="standard" data-i18n="theme.standard">标准</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-copy">
+      <p class="hero-lead" data-i18n="hero.lead">WiTV 是给 Android TV 和电视盒子用的开源直播播放器。它播放你自己的 M3U 直播源：开机就在播，用遥控器换台，设置在手机上完成。</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/whyun-android/witv/releases/latest" data-i18n="cta.download">下载 APK</a>
+        <a class="btn btn-ghost" href="https://github.com/whyun-android/witv" data-i18n="cta.source">查看源代码</a>
+      </div>
+      <p class="hero-note" data-i18n="hero.note">上面这台电视可以直接操作：点一下画面，再按方向键。</p>
+    </div>
+  </section>
+
+  <!-- 为谁设计 -->
+  <section class="section principles" aria-labelledby="who-title">
+    <h2 id="who-title" data-i18n="who.title">沙发上的人什么都不用设置</h2>
+    <div class="who-grid">
+      <div class="who">
+        <h3 data-i18n="who.viewer.title">看电视的人</h3>
+        <p data-i18n="who.viewer.body">家里的老人和孩子只需要方向键、确认和返回。开机直接进直播，换台、找分组、按数字键跳台，字号按三米外能看清来定。</p>
+      </div>
+      <div class="who">
+        <h3 data-i18n="who.admin.title">管设备的人</h3>
+        <p data-i18n="who.admin.body">直播源、节目单、组播代理都在手机或电脑浏览器里配置。电视屏幕上显示二维码和局域网地址，不用拿遥控器打字。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 三步装好：真实的先后顺序 -->
+  <section class="section" id="setup" aria-labelledby="setup-title">
+    <h2 id="setup-title" data-i18n="setup.title">三步装好</h2>
+    <ol class="steps">
+      <li>
+        <h3 data-i18n="setup.1.title">把 APK 装到盒子上</h3>
+        <p data-i18n="setup.1.body">支持 Android 6.0 及以上的电视和盒子，在斐讯 N1（Android 7.1）上开发和测试。</p>
+      </li>
+      <li>
+        <h3 data-i18n="setup.2.title">用手机扫电视上的二维码</h3>
+        <p data-i18n="setup.2.body">第一次打开时，电视上会显示管理页的二维码和地址（端口 9979）。手机和盒子在同一个局域网里就能打开。</p>
+      </li>
+      <li>
+        <h3 data-i18n="setup.3.title">添加你的 M3U 地址</h3>
+        <p data-i18n="setup.3.body">在管理页里填上直播源地址，电视那边会自动加载频道并开始播放。</p>
+      </li>
+    </ol>
+  </section>
+
+  <!-- 功能：用节目单的样子排，左边一列是功能所属的场景 -->
+  <section class="section" id="features" aria-labelledby="features-title">
+    <h2 id="features-title" data-i18n="features.title">它能做什么</h2>
+    <dl class="guide">
+      <div class="guide-row">
+        <dt data-i18n="f.failover.k">源不稳</dt>
+        <dd><strong data-i18n="f.failover.t">一个频道，多个播放地址</strong><span data-i18n="f.failover.d">同名频道的地址自动合并。播放失败或超时会按顺序换下一个，卡住了会自己重连，并在屏幕上告诉你发生了什么。</span></dd>
+      </div>
+      <div class="guide-row">
+        <dt data-i18n="f.menu.k">换台</dt>
+        <dd><strong data-i18n="f.menu.t">分组、频道、今日节目单三栏菜单</strong><span data-i18n="f.menu.d">为遥控器设计的三栏菜单，当前节目原位高亮。上下键直接换台，数字键跳到指定频道，常看的频道可以收藏。</span></dd>
+      </div>
+      <div class="guide-row">
+        <dt data-i18n="f.epg.k">节目单</dt>
+        <dd><strong data-i18n="f.epg.t">XMLTV 节目预告</strong><span data-i18n="f.epg.d">可以用直播源里自带的 EPG 地址，也可以换成自己的，在管理页里一个开关切换，节目单会自动刷新。</span></dd>
+      </div>
+      <div class="guide-row">
+        <dt data-i18n="f.multicast.k">组播</dt>
+        <dd><strong data-i18n="f.multicast.t">UDP / RTP 组播直连或走 udpxy</strong><span data-i18n="f.multicast.d">支持运营商 IPTV 组播频道，带 RTP 剥头与乱序重排；收不到组播时可以配置 udpxy 转成 HTTP 单播。</span></dd>
+      </div>
+      <div class="guide-row">
+        <dt data-i18n="f.decoder.k">老盒子</dt>
+        <dd><strong data-i18n="f.decoder.t">硬解优先，FFmpeg 兜底</strong><span data-i18n="f.decoder.d">内置 FFmpeg 软解，补上盒子硬解常缺的 MPEG-2 视频与 MP2 / AC3 音频。可以选择硬解优先、软解优先或仅硬解。</span></dd>
+      </div>
+      <div class="guide-row">
+        <dt data-i18n="f.launcher.k">开机</dt>
+        <dd><strong data-i18n="f.launcher.t">可以当桌面用</strong><span data-i18n="f.launcher.d">设为默认桌面后，开机、按主页键都直接进直播。返回键里的「切换应用」随时能打开其他应用或换回原来的桌面。</span></dd>
+      </div>
+      <div class="guide-row">
+        <dt data-i18n="f.look.k">外观</dt>
+        <dd><strong data-i18n="f.look.t">两套主题，中英文界面</strong><span data-i18n="f.look.d">「标准」是深色面板加蓝色焦点，「电视台包装」是演播室深蓝加白色字幕条。首屏的电视可以直接切换看看。</span></dd>
+      </div>
+    </dl>
+  </section>
+
+  <!-- 遥控器 -->
+  <section class="section" id="remote" aria-labelledby="remote-title">
+    <h2 id="remote-title" data-i18n="remote.title">遥控器怎么按</h2>
+    <table class="keys">
+      <tbody>
+        <tr><th scope="row" data-i18n="k.ok">确认</th><td data-i18n="k.ok.d">打开频道菜单；停留一会儿没有操作会自动收起</td></tr>
+        <tr><th scope="row" data-i18n="k.updown">上 / 下</th><td data-i18n="k.updown.d">上一个 / 下一个频道（方向可以在设置里反过来）</td></tr>
+        <tr><th scope="row" data-i18n="k.num">数字键</th><td data-i18n="k.num.d">输入频道号直接跳转</td></tr>
+        <tr><th scope="row" data-i18n="k.info">信息键</th><td data-i18n="k.info.d">显示 / 隐藏节目与信号信息</td></tr>
+        <tr><th scope="row" data-i18n="k.menu">菜单键</th><td data-i18n="k.menu.d">打开设置</td></tr>
+        <tr><th scope="row" data-i18n="k.back">返回</th><td data-i18n="k.back.d">关闭菜单；在播放时按下可以去设置、切换应用或退出</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 下载 -->
+  <section class="section download" id="download" aria-labelledby="download-title">
+    <h2 id="download-title" data-i18n="download.title">下载</h2>
+    <p data-i18n="download.body">从 GitHub Releases 下载最新的 APK，用 U 盘、adb 或盒子自带的文件管理器安装。WiTV 使用 MIT 协议开源，没有账号，也不联网上报任何数据。</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="https://github.com/whyun-android/witv/releases/latest" data-i18n="cta.download">下载 APK</a>
+      <a class="btn btn-ghost" href="https://github.com/whyun-android/witv/blob/main/docs/user-guide.md" data-i18n="cta.guide">阅读使用手册</a>
+    </div>
+    <p class="disclaimer" data-i18n="download.disclaimer">WiTV 本身不提供任何频道或节目内容，需要你自己添加合法的直播源。本页演示画面中的频道和节目均为示意。</p>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <span>WiTV</span>
+  <a href="https://github.com/whyun-android/witv" data-i18n="footer.source">源代码</a>
+  <a href="https://github.com/whyun-android/witv/issues" data-i18n="footer.issues">反馈问题</a>
+  <a href="https://github.com/whyun-android/witv/blob/main/LICENSE" data-i18n="footer.license">MIT 协议</a>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
