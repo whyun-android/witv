@@ -1,0 +1,3 @@
+- Channel menu now spans the left edge with a clearer focus highlight
+- Playlist refresh on startup runs in the background, so playback starts sooner
+- 4K HEVC stays on the hardware decoder when only the level is too high

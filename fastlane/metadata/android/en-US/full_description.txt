@@ -1,0 +1,15 @@
+<p>WiTV is a live TV player built for Android TV and TV boxes. Everything works with a remote control.</p>
+
+<p>WiTV does not ship any channels or content. You add your own legitimate M3U playlists.</p>
+
+<p><b>Features</b></p>
+<ul>
+<li>Manage several M3U / M3U8 playlists and switch between them</li>
+<li>Merges multiple stream URLs per channel and fails over automatically</li>
+<li>EPG from the playlist's XMLTV URL or one you set yourself</li>
+<li>Web admin on your LAN: add playlists and favorites from a phone or PC browser</li>
+<li>UDP / RTP multicast, with optional udpxy unicast proxy</li>
+<li>Built-in FFmpeg software decoding for formats the box can't decode</li>
+<li>Can replace the home screen and start straight into live TV</li>
+<li>Chinese and English UI, two themes</li>
+</ul>

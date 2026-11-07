@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  # 对已有 tag 重新编译、签名并替换 Release 里的 APK（例如修正签名方式后补发）
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要重新发布的 tag，例如 v1.5.1'
+        required: true
 
 permissions:
   contents: write
@@ -11,15 +17,21 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # tag 推送时是 ref 名，手动触发时是输入的 tag
+      TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # 手动触发时检出指定 tag
+          ref: ${{ inputs.tag || github.ref }}
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Setup Android SDK
@@ -27,7 +39,7 @@ jobs:
         with:
           # 该 action 默认安装 'tools platform-tools'，而废弃的 'tools' 包已被 Google
           # 从 SDK 仓库下架，sdkmanager 会直接报 "Failed to find package 'tools'" 而失败。
-          packages: 'platform-tools'
+          packages: 'platform-tools build-tools;36.0.0'
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
@@ -44,23 +56,37 @@ jobs:
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon
 
+      # 直接用 apksigner 并保留原有对齐：签名前不能重新 zipalign，
+      # 否则 F-Droid 无法把我们的签名套到它自己编出的未签名包上，可复现构建验证不过
       - name: Sign app APK
-        uses: ilharp/sign-android-release@v2
-        id: sign_app
-        with:
-          releaseDir: app/build/outputs/apk/release
-          signingKey: ${{ secrets.SIGNING_KEY }}
-          keyAlias: ${{ secrets.ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-          buildToolsVersion: 36.0.0
-
-      - name: Rename APK
-        run: mv ${{ steps.sign_app.outputs.signedFile }} witv_$GITHUB_REF_NAME.apk
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$SIGNING_KEY" | base64 -d > "$RUNNER_TEMP/release.jks"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/release.jks" \
+            --ks-key-alias "$ALIAS" \
+            --ks-pass env:KEY_STORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --alignment-preserved \
+            --v4-signing-enabled false \
+            --out "witv_${TAG}.apk" \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          rm -f "$RUNNER_TEMP/release.jks"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "witv_${TAG}.apk"
 
       - name: Release
         uses: ncipollo/release-action@v1
         with:
+          tag: ${{ env.TAG }}
           artifacts: "*.apk"
           token: ${{ github.token }}
           generateReleaseNotes: true
+          # 手动重发时更新已有 Release 并替换同名 APK，不改动已写好的说明
+          allowUpdates: true
+          replacesArtifacts: true
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true

@@ -2,6 +2,24 @@ plugins {
     id 'com.android.application'
 }
 
+// 可复现构建：「构建时间」取当前提交的提交时间，同一 tag 任何机器编出来的 APK 字节一致
+// （F-Droid 会把自己编的包和 GitHub Release 的 APK 逐字节比对）。
+// 没有 git 时（如源码压缩包）退回 SOURCE_DATE_EPOCH，再退回 0。
+def buildTimeMillis = {
+    try {
+        def out = providers.exec {
+            commandLine 'git', 'log', '-1', '--format=%ct'
+            ignoreExitValue = true
+        }.standardOutput.asText.get().trim()
+        if (out) {
+            return Long.parseLong(out) * 1000L
+        }
+    } catch (Exception ignored) {
+    }
+    def epoch = System.getenv('SOURCE_DATE_EPOCH')
+    return epoch ? Long.parseLong(epoch) * 1000L : 0L
+}()
+
 android {
     namespace 'com.whyun.witv'
     compileSdk 36
@@ -17,12 +35,14 @@ android {
         targetSdk 34
         versionCode 8
         versionName "1.5.1"
-        buildConfigField "long", "BUILD_TIME_MILLIS", "${System.currentTimeMillis()}L"
+        buildConfigField "long", "BUILD_TIME_MILLIS", "${buildTimeMillis}L"
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            // F-Droid 审核会要求开启 R8：删掉未用代码和资源，APK 更小
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // NextLib 的 FFmpeg 软解带原生库，四个 ABI 全带会让 APK 多出一倍体积。
             // 发布包只保留 ARM（Android TV 盒子全是 ARM）；debug 保留全部 ABI，
@@ -30,6 +50,20 @@ android {
             ndk {
                 abiFilters 'armeabi-v7a', 'arm64-v8a'
             }
+        }
+    }
+
+    // AGP 默认往 APK 里塞一段 Google 加密的依赖清单（DependencyInfoBlock），
+    // F-Droid 扫描会报错，也不利于可复现构建，关掉
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    // Robolectric 单元测试需要合并后的资源，才能解析主题属性
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
         }
     }
 

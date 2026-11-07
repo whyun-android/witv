@@ -1,0 +1,1 @@
+IPTV player for Android TV: M3U playlists, source failover, EPG, web admin
