@@ -399,6 +399,7 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:clipToPadding="false"
                     android:orientation="vertical"
                     android:paddingHorizontal="24dp"
                     android:paddingTop="24dp"
@@ -418,17 +419,19 @@
                         android:id="@+id/channel_list_epg_date"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="16dp"
                         android:textColor="?attr/witvTextSecondary"
                         android:textSize="15sp"
                         android:visibility="gone" />
 
-                    <!-- 当天节目列表：一行一个节目，当前节目原位高亮（见 item_epg_program） -->
+                    <!-- 当天节目列表：一行一个节目，当前节目原位高亮（见 item_epg_program）。
+                         左右各外扩 12dp 给当前节目块用，行内再收回，文字仍与台名对齐 -->
                     <LinearLayout
                         android:id="@+id/channel_list_epg_list"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
+                        android:layout_marginHorizontal="-12dp"
+                        android:layout_marginTop="7dp"
                         android:orientation="vertical" />
 
                     <!-- 无节目 / 加载中的提示 -->

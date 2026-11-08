@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 节目单里的一行：只在顶部画一条分隔线。
-     面板是半透明的，视频会盖过底色深浅，分栏只能靠这条线。 -->
+     面板是半透明的，视频会盖过底色深浅，分栏只能靠这条线。
+     行左右各有 12dp 是给当前节目块外扩用的，分隔线要收回到文字范围内（与稿里 .p 同宽）。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:gravity="top"
-        android:height="1dp">
+        android:height="1dp"
+        android:left="12dp"
+        android:right="12dp">
         <shape android:shape="rectangle">
             <solid android:color="?attr/witvEpgDivider" />
         </shape>

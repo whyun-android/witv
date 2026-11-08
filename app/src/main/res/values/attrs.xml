@@ -56,6 +56,8 @@
     <attr name="witvOnFocusNumber" format="color" />
     <!-- 节目单栏的列表分隔线 -->
     <attr name="witvEpgDivider" format="color" />
+    <!-- 节目单里已播完节目的节目名（时间列不压暗，与稿一致） -->
+    <attr name="witvEpgPastText" format="color" />
     <!-- 节目单里当前节目的呈现：block=整块高亮＋牌子＋进度条，text=加粗＋时间变色 -->
     <attr name="witvEpgCurrentStyle" format="enum">
         <enum name="block" value="0" />

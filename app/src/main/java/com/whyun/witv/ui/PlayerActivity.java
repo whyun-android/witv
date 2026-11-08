@@ -1163,11 +1163,11 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             titleView.setText(p.title != null ? p.title : "");
 
             if (now >= p.endTime) {
-                // 已经播完的压暗，视线自然落到当前节目
-                timeView.setAlpha(0.55f);
-                titleView.setAlpha(0.55f);
+                // 已经播完的节目名压暗，视线自然落到当前节目；稿里时间列保持原色
+                titleView.setTextColor(ThemeColors.get(this, R.attr.witvEpgPastText));
             }
             if (now >= p.startTime && now < p.endTime) {
+                timeView.setTypeface(null, Typeface.BOLD);
                 titleView.setTypeface(null, Typeface.BOLD);
                 if (!isEpgCurrentBlock()) {
                     // 标准主题没有整块底色，当前节目靠强调色区分（witvLive 是「直播中」牌子的白底，不能用）
@@ -1178,15 +1178,12 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
                     timeView.setTextColor(ThemeColors.get(this, R.attr.witvLive));
                 }
                 if (isEpgCurrentBlock()) {
+                    // 整块底色；比列表文字宽出的那一截由布局留好（见 item_epg_program 的注释），
+                    // 这里不再用负 margin 外扩——那样会被父容器裁掉圆角和左右留白
                     row.setBackgroundResource(R.drawable.epg_program_row_current_bg);
-                    // 稿里当前节目是整块、比列表宽出来一点：左右各外扩，文字位置不变
-                    int bleed = dpToPx(12);
-                    LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) row.getLayoutParams();
-                    lp.leftMargin = -bleed;
-                    lp.rightMargin = -bleed;
-                    row.setPadding(bleed, row.getPaddingTop(), bleed, row.getPaddingBottom());
                     badgeView.setVisibility(View.VISIBLE);
                     progressRow.setVisibility(View.VISIBLE);
+                    row.findViewById(R.id.epg_program_progress).setClipToOutline(true);
                     long total = Math.max(1L, p.endTime - p.startTime);
                     float ratio = (now - p.startTime) / (float) total;
                     ratio = Math.max(0f, Math.min(1f, ratio));

@@ -39,6 +39,7 @@
         <item name="witvChannelNumberStyle">@style/ChannelNumber.Standard</item>
         <item name="witvOnFocusNumber">#FFE3ECFF</item>
         <item name="witvEpgDivider">#1FFFFFFF</item>
+        <item name="witvEpgPastText">#73FFFFFF</item>
         <item name="witvEpgCurrentStyle">text</item>
     </style>
 
@@ -78,6 +79,7 @@
         <item name="witvChannelNumberStyle">@style/ChannelNumber.Packaging</item>
         <item name="witvOnFocusNumber">#FFFFFFFF</item>
         <item name="witvEpgDivider">#FF13265C</item>
+        <item name="witvEpgPastText">#FF5E709E</item>
         <item name="witvEpgCurrentStyle">block</item>
     </style>
 

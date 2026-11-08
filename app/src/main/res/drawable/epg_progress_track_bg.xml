@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 节目单「当前节目」进度条的轨道：稿里 6px 高、3px 圆角 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/witvWindowBg" />
+    <corners android:radius="2dp" />
+</shape>
