@@ -41,8 +41,30 @@ public class WiTVApp extends Application {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        if (isRestartProcess()) {
+            // 重启跳板进程（见 ProcessRestartActivity）：不能抢占网页配置端口，也不需要数据库
+            return;
+        }
         AppDatabase.getInstance(this);
         startWebServer();
+    }
+
+    /** 当前是否是 {@code :restart} 跳板进程。minSdk 23 没有 Application.getProcessName()，读 /proc。 */
+    private static boolean isRestartProcess() {
+        try (java.io.FileInputStream in = new java.io.FileInputStream("/proc/self/cmdline")) {
+            byte[] buf = new byte[256];
+            int n = in.read(buf);
+            if (n <= 0) {
+                return false;
+            }
+            int end = 0;
+            while (end < n && buf[end] != 0) {
+                end++;
+            }
+            return new String(buf, 0, end, java.nio.charset.StandardCharsets.UTF_8).endsWith(":restart");
+        } catch (java.io.IOException e) {
+            return false;
+        }
     }
 
     public static WiTVApp getInstance() {

@@ -22,6 +22,8 @@ import android.util.TypedValue;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -142,6 +144,8 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
 
     private long currentChannelId;
     private long sourceId;
+    /** onResume 之后、onPause 之前 */
+    private boolean activityResumed;
     private Channel currentChannel;
     private List<Channel> allChannels;
     private List<String> visibleChannelGroups = new ArrayList<>();
@@ -464,6 +468,7 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         playerManager = new PlayerManager(this);
         playerManager.initialize(playerView);
         playerManager.setCallback(this);
+        watchVideoSurfaceForBackground();
 
         channelRepository = new ChannelRepository(this);
         epgRepository = new EpgRepository(this);
@@ -2040,8 +2045,49 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
         outState.putLong(EXTRA_SOURCE_ID, sourceId);
     }
 
+    /**
+     * 播放页退到后台、视频 Surface 被系统拆掉的那一刻就释放播放器（见 PlayerManager#suspendForBackground）。
+     *
+     * <p>不能只靠 onStop：系统要等切过去的那个应用 idle 了才给前一个 Activity 发 onStop，
+     * 实测切到 DIYP 影音时 onStop 一直拖到切回 WiTV 才到，而 Surface 在切走时就已经被拆了，
+     * 解码器照样在两块 Surface 之间来回倒。也不能在 onPause 里释放：作为桌面时按 Home 会走
+     * onPause → onNewIntent → onResume，每按一次 Home 都重开一遍播放。
+     */
+    private void watchVideoSurfaceForBackground() {
+        View videoSurface = playerView.getVideoSurfaceView();
+        if (!(videoSurface instanceof SurfaceView)) {
+            return;
+        }
+        ((SurfaceView) videoSurface).getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(@NonNull SurfaceHolder holder) {
+            }
+
+            @Override
+            public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
+            }
+
+            @Override
+            public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+                // 前台时主动重建 Surface（解码器起不来时收起 PlayerView）也会走到这里，不能释放
+                if (!activityResumed) {
+                    suspendPlayerForBackground();
+                }
+            }
+        });
+    }
+
+    private void suspendPlayerForBackground() {
+        ExoPlayer exo = playerManager.getPlayer();
+        if (exo != null) {
+            exo.removeListener(mediaInfoListener);
+        }
+        playerManager.suspendForBackground();
+    }
+
     @Override
     protected void onPause() {
+        activityResumed = false;
         super.onPause();
         handler.removeCallbacks(loadSpeedRefreshRunnable);
         playerManager.pause();
@@ -2059,6 +2105,9 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
             recreate();
             return;
         }
+        activityResumed = true;
+        // 没挂起过（首次进入、按 Home 回到自己）时什么都不做；从别的应用回来时重建播放器续播
+        playerManager.resumeFromBackground();
         playerManager.resume();
         applyLoadSpeedOverlayPreference();
         startLoadSpeedRefreshIfNeeded();
@@ -2073,7 +2122,21 @@ public class PlayerActivity extends FragmentActivity implements PlayerManager.Ca
     @Override
     protected void onStop() {
         WiTVApp.getInstance().removeSourceChangeListener(this);
+        // 兜底：一般在 Surface 被拆时就已经释放了（见 watchVideoSurfaceForBackground）
+        suspendPlayerForBackground();
         super.onStop();
+    }
+
+    /** 播放线程卡死在解码器里且进程内重建也救不回：重启进程续播当前频道。 */
+    @Override
+    public void onPlaybackEngineUnrecoverable() {
+        if (isFinishing()) {
+            return;
+        }
+        Intent relaunch = new Intent(this, PlayerActivity.class)
+                .putExtra(EXTRA_CHANNEL_ID, currentChannelId)
+                .putExtra(EXTRA_SOURCE_ID, sourceId);
+        ProcessRestartActivity.restart(this, relaunch);
     }
 
     @Override

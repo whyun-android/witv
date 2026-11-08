@@ -97,6 +97,15 @@
             android:name=".ui.SettingsActivity"
             android:screenOrientation="landscape" />
 
+        <!-- 播放引擎卡死时重启主进程的跳板，必须在独立进程里，见 ProcessRestartActivity -->
+        <activity
+            android:name=".ui.ProcessRestartActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:process=":restart"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
     </application>
 
 </manifest>

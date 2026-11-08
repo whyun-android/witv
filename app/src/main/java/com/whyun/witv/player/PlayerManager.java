@@ -63,6 +63,15 @@ public class PlayerManager {
          * {@link PlayerManager#getPlayer()} 返回的新实例上。
          */
         void onPlayerRebuilt();
+
+        /**
+         * 播放引擎在本进程内已经救不回来了（播放线程卡死在厂商解码器里，重建播放器后仍不能出画）。
+         *
+         * <p>卡住的是 mediaserver 那头的硬件解码器调用，Java 层没有任何办法把那条线程拉出来，
+         * 实测只有重启进程才能恢复。调用方应当重启进程并续播当前频道。
+         */
+        default void onPlaybackEngineUnrecoverable() {
+        }
     }
 
     /**
@@ -180,6 +189,35 @@ public class PlayerManager {
     /** 当前频道已经为解码器失败重建过几次 Surface */
     private int decoderSurfaceRecoveries;
 
+    /** 播放线程看门狗：每隔多久往播放线程投一次探针 */
+    static final long PLAYBACK_THREAD_PING_INTERVAL_MS = 2_000L;
+
+    /**
+     * 探针多久没被播放线程处理就算卡死。
+     *
+     * <p>正常情况下播放线程每 10ms 一轮 doSomeWork，探针几毫秒内就会被处理；
+     * 创建/释放解码器偶尔会占住它一两秒。10 秒没反应只可能是卡在了不会返回的调用里
+     * （实测 Amlogic 盒子上 {@code MediaCodec.flush()} 会永久阻塞）。
+     */
+    static final long PLAYBACK_THREAD_HANG_THRESHOLD_MS = 10_000L;
+
+    /** 播放线程卡死后，进程内重建播放器最多试几次；再卡就交给调用方重启进程 */
+    static final int MAX_HANG_REBUILDS = 1;
+
+    private Runnable hangWatchdogRunnable;
+    /** 当前在途探针的投递时刻（elapsedRealtime），0 表示没有在途探针。播放线程处理后清零。 */
+    private volatile long pendingPingSentAtMs;
+    /** 已经因为播放线程卡死重建过几次播放器；稳定播放一段时间后清零 */
+    private int hangRebuilds;
+    /** 因卡死重建之后还没成功出过画：这期间再失败就不是源的问题，而是引擎没恢复 */
+    private boolean awaitingRecoveryAfterHang;
+
+    /**
+     * 播放页不可见期间播放器整个释放掉了（见 {@link #suspendForBackground()}）。
+     * 这期间换台只记下线路，不起播。
+     */
+    private boolean suspendedInBackground;
+
     private static String playbackStateName(int state) {
         switch (state) {
             case Player.STATE_IDLE:
@@ -261,6 +299,7 @@ public class PlayerManager {
         cancelTimeout();
         cancelRebufferWatchdog();
         hasStartedPlayback = true;
+        awaitingRecoveryAfterHang = false;
         lastReadyAtMs = SystemClock.elapsedRealtime();
         isRetrying = false;
         Log.i(TAG, "Playback started, source index: " + currentSourceIndex);
@@ -379,6 +418,118 @@ public class PlayerManager {
             // 只有官方 EventLogger 有。日志很吵，所以只在 debug 构建挂。
             player.addAnalyticsListener(new EventLogger(TAG + "-ev"));
         }
+        startHangWatchdog();
+    }
+
+    /**
+     * 盯住 ExoPlayer 的播放线程有没有卡死。
+     *
+     * <p>ExoPlayer 的一切内部动作（prepare / stop / 换源 / 释放）都排在这一条线程上。
+     * 它一旦卡在不返回的解码器调用里，后面所有指令都只是在排队：界面上看是「一直缓冲 → 超时换源
+     * → 全部线路失败」，换台、重试都没用，像是网络断了。这里每隔
+     * {@link #PLAYBACK_THREAD_PING_INTERVAL_MS} 往播放线程投一个探针，超过
+     * {@link #PLAYBACK_THREAD_HANG_THRESHOLD_MS} 没被处理就判定卡死。
+     *
+     * <p>计时从探针投出去那一刻算，而不是从上次应答算：主线程自己卡住时探针根本投不出去，
+     * 不能因此误判播放线程卡死。
+     */
+    private void startHangWatchdog() {
+        stopHangWatchdog();
+        final ExoPlayer watched = player;
+        if (watched == null) {
+            return;
+        }
+        final Handler playbackThreadHandler = new Handler(watched.getPlaybackLooper());
+        hangWatchdogRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (player != watched || hangWatchdogRunnable != this) {
+                    return;
+                }
+                long now = SystemClock.elapsedRealtime();
+                long sentAt = pendingPingSentAtMs;
+                if (sentAt != 0L) {
+                    if (now - sentAt >= PLAYBACK_THREAD_HANG_THRESHOLD_MS) {
+                        onPlaybackThreadHung(now - sentAt);
+                        return;
+                    }
+                } else {
+                    pendingPingSentAtMs = now;
+                    playbackThreadHandler.post(() -> pendingPingSentAtMs = 0L);
+                }
+                if (hangRebuilds > 0 && hasStartedPlayback && player.isPlaying()
+                        && now - lastReadyAtMs >= STALL_RECOVERY_RESET_AFTER_MS) {
+                    // 重建后已经稳定播了一阵，之后再卡死算新的一次，仍先在进程内重建
+                    hangRebuilds = 0;
+                }
+                handler.postDelayed(this, PLAYBACK_THREAD_PING_INTERVAL_MS);
+            }
+        };
+        pendingPingSentAtMs = 0L;
+        handler.post(hangWatchdogRunnable);
+    }
+
+    private void stopHangWatchdog() {
+        if (hangWatchdogRunnable != null) {
+            handler.removeCallbacks(hangWatchdogRunnable);
+            hangWatchdogRunnable = null;
+        }
+        pendingPingSentAtMs = 0L;
+    }
+
+    /**
+     * 播放线程卡死：丢掉整个播放器，换一块新 Surface 原地重开当前线路；
+     * 重建过还卡，就交给调用方重启进程。
+     */
+    private void onPlaybackThreadHung(long unresponsiveMs) {
+        stopHangWatchdog();
+        if (hangRebuilds >= MAX_HANG_REBUILDS || playerView == null) {
+            Log.e(TAG, String.format(Locale.US,
+                    "Playback thread unresponsive for %dms again after %d rebuild(s) — engine unrecoverable in-process",
+                    unresponsiveMs, hangRebuilds));
+            escalateEngineUnrecoverable();
+            return;
+        }
+        hangRebuilds++;
+        Log.e(TAG, String.format(Locale.US,
+                "Playback thread unresponsive for %dms (stuck in a decoder call) — abandoning the player and rebuilding (%d/%d)",
+                unresponsiveMs, hangRebuilds, MAX_HANG_REBUILDS));
+        awaitingRecoveryAfterHang = true;
+        rebuildPlayerWithFreshSurface();
+    }
+
+    private void escalateEngineUnrecoverable() {
+        cancelTimeout();
+        cancelRebufferWatchdog();
+        stopHangWatchdog();
+        playGeneration++;
+        awaitingRecoveryAfterHang = false;
+        if (callback != null) {
+            callback.onPlaybackEngineUnrecoverable();
+        }
+    }
+
+    /**
+     * 释放 prefetcher 与播放器，并先把播放器从 PlayerView 上摘下来
+     * （原因见 {@link #reinitializeForDecoderModeChange()} 里的注释）。
+     *
+     * <p>播放线程卡死时 {@code release()} 等不到它应答，会在超时（默认 500ms）后放弃返回，
+     * 卡住的那条线程连同它占着的旧 Surface 一起被丢下，所以重建时必须换一块新 Surface。
+     */
+    private void releasePlayerInstance() {
+        stopHangWatchdog();
+        if (hlsSegmentPrefetcher != null) {
+            hlsSegmentPrefetcher.release();
+            hlsSegmentPrefetcher = null;
+        }
+        if (player != null) {
+            player.removeListener(playerListener);
+            if (playerView != null) {
+                playerView.setPlayer(null);
+            }
+            player.release();
+            player = null;
+        }
     }
 
     /**
@@ -440,7 +591,7 @@ public class PlayerManager {
      * 不在这里补建的话，{@code playCurrentSource} 会对着 null 调 {@code stop()} 直接崩。
      */
     private void ensurePlayerReady() {
-        if (player != null || playerView == null) {
+        if (player != null || playerView == null || suspendedInBackground) {
             return;
         }
         Log.i(TAG, "Player was released (surface rebuild in flight) — rebuilding it now");
@@ -495,7 +646,17 @@ public class PlayerManager {
         Log.w(TAG, String.format(Locale.US,
                 "Decoder init failed — rebuilding the surface and retrying in place (%d/%d)",
                 decoderSurfaceRecoveries, MAX_DECODER_SURFACE_RECOVERIES));
+        rebuildPlayerWithFreshSurface();
+        return true;
+    }
 
+    /**
+     * 丢掉当前播放器，收起再放出 PlayerView 换一块新 Surface，然后用新播放器原地重开当前线路。
+     */
+    private void rebuildPlayerWithFreshSurface() {
+        if (playerView == null) {
+            return;
+        }
         final PlayerView view = playerView;
         final List<ChannelSource> sources = new ArrayList<>(currentSources);
         final int index = currentSourceIndex;
@@ -506,16 +667,7 @@ public class PlayerManager {
         playGeneration++;
         final int generation = playGeneration;
 
-        if (hlsSegmentPrefetcher != null) {
-            hlsSegmentPrefetcher.release();
-            hlsSegmentPrefetcher = null;
-        }
-        if (player != null) {
-            player.removeListener(playerListener);
-            view.setPlayer(null);
-            player.release();
-            player = null;
-        }
+        releasePlayerInstance();
         view.setVisibility(View.GONE);
 
         handler.postDelayed(() -> {
@@ -536,10 +688,65 @@ public class PlayerManager {
                 currentSources = sources;
                 currentSourceIndex = Math.max(0, Math.min(index, sources.size() - 1));
                 isRetrying = false;
-                playCurrentSource();
+                if (!sources.isEmpty()) {
+                    playCurrentSource();
+                }
             }, SURFACE_RECREATE_DELAY_MS);
         }, SURFACE_RECREATE_DELAY_MS);
-        return true;
+    }
+
+    /**
+     * 播放页不可见（onStop）时整个释放播放器和解码器，回来时（{@link #resumeFromBackground()}）
+     * 重新建播放器续播当前频道。
+     *
+     * <p>只暂停的话，解码器会一直挂着：切到别的应用时 SurfaceView 的 Surface 被销毁，
+     * ExoPlayer 把输出换到占位 Surface，回来再换回去。Amlogic 硬解在这样来回换几次之后
+     * 状态会乱掉（{@code dequeueBuffer: attempting to exceed the max dequeued buffer count}），
+     * 下一次 {@code MediaCodec.flush()} 永久阻塞，把播放线程整个卡死。直播停在后台本来也没有意义。
+     */
+    public void suspendForBackground() {
+        if (suspendedInBackground) {
+            return;
+        }
+        suspendedInBackground = true;
+        playGeneration++;
+        cancelTimeout();
+        cancelRebufferWatchdog();
+        awaitingRecoveryAfterHang = false;
+        releasePlayerInstance();
+        Log.i(TAG, "Player released while in background");
+    }
+
+    /** 回到前台：重建播放器并续播（见 {@link #suspendForBackground()}）。 */
+    public void resumeFromBackground() {
+        if (!suspendedInBackground) {
+            return;
+        }
+        suspendedInBackground = false;
+        if (playerView == null) {
+            return;
+        }
+        if (playerView.getVisibility() != View.VISIBLE) {
+            // 后台前正在为解码器失败重建 Surface，那条流程已被 playGeneration 作废
+            playerView.setVisibility(View.VISIBLE);
+        }
+        initialize(playerView);
+        if (callback != null) {
+            callback.onPlayerRebuilt();
+        }
+        if (currentSources.isEmpty()) {
+            return;
+        }
+        Log.i(TAG, "Back in foreground — rebuilding the player and resuming the channel");
+        playGeneration++;
+        consecutiveStallRecoveries = 0;
+        decoderSurfaceRecoveries = 0;
+        // 走之前已经全部失败的话，回来从第一条线路重新试一遍
+        if (currentSourceIndex < 0 || currentSourceIndex >= currentSources.size()) {
+            currentSourceIndex = 0;
+        }
+        isRetrying = false;
+        playCurrentSource();
     }
 
     public boolean reinitializeForDecoderModeChange() {
@@ -549,7 +756,12 @@ public class PlayerManager {
         List<ChannelSource> sources = new ArrayList<>(currentSources);
         int index = currentSourceIndex;
 
+        if (suspendedInBackground) {
+            // 回到前台时会按新的解码方式重建
+            return true;
+        }
         cancelTimeout();
+        stopHangWatchdog();
         // 让旧播放器的残留回调失效
         playGeneration++;
         if (hlsSegmentPrefetcher != null) {
@@ -613,11 +825,22 @@ public class PlayerManager {
                 hlsSegmentPrefetcher.onPlaybackSourceChanged(Uri.EMPTY);
             }
             stopPlayer();
+            if (awaitingRecoveryAfterHang) {
+                // 播放线程卡死重建之后一次都没出过画：新解码器多半被卡住的旧实例占着，换源没用
+                Log.e(TAG, "All sources failed after a playback-thread hang rebuild — engine unrecoverable in-process");
+                escalateEngineUnrecoverable();
+                return;
+            }
             Log.e(TAG, "All sources failed");
             if (callback != null) callback.onAllSourcesFailed();
             return;
         }
 
+        if (suspendedInBackground) {
+            // 后台期间只记下线路，回到前台时由 resumeFromBackground 起播
+            Log.i(TAG, "In background — deferring playback until the activity is visible again");
+            return;
+        }
         ensurePlayerReady();
         if (player == null) {
             Log.w(TAG, "No player instance — cannot start playback");
@@ -920,19 +1143,8 @@ public class PlayerManager {
     public void release() {
         cancelTimeout();
         cancelRebufferWatchdog();
-        if (hlsSegmentPrefetcher != null) {
-            hlsSegmentPrefetcher.release();
-            hlsSegmentPrefetcher = null;
-        }
-        if (player != null) {
-            player.removeListener(playerListener);
-            if (playerView != null) {
-                // 与 reinitializeForDecoderModeChange 同理：先解绑 Surface 再释放，
-                // 否则 Surface 会停在 connected 状态
-                playerView.setPlayer(null);
-            }
-            player.release();
-            player = null;
-        }
+        // 与 reinitializeForDecoderModeChange 同理：先解绑 Surface 再释放，
+        // 否则 Surface 会停在 connected 状态
+        releasePlayerInstance();
     }
 }
