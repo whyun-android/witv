@@ -4,7 +4,7 @@ Android TV M3U 直播播放器，使用原生 ExoPlayer 播放，支持多源自
 
 ![](docs/images/epg.png)
 
-完整的图文使用说明见 [docs/user-guide.md](docs/user-guide.md)。
+完整的图文使用说明见 [docs/user-guide.md](docs/user-guide.md)。需要 HTML 版时运行 `python scripts/build_user_guide.py`（依赖 `pip install markdown`），输出到 `build/user-guide/`；加 `--single-file` 只生成一个内嵌图片的 html。
 
 ## 功能
 
