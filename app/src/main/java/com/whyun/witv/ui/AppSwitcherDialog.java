@@ -120,7 +120,9 @@ public final class AppSwitcherDialog {
             }
         };
 
-        AlertDialog dialog = new AlertDialog.Builder(activity)
+        // 不跟随 WiTV 主题的弹窗样式：固定用系统默认的 Material 弹窗（主题改造前的样子）
+        AlertDialog dialog = new AlertDialog.Builder(activity,
+                android.R.style.ThemeOverlay_Material_Dialog_Alert)
                 .setTitle(R.string.app_switcher_title)
                 .setAdapter(adapter, (d, which) -> {
                     Item item = items.get(which);
