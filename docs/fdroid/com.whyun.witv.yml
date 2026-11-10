@@ -14,16 +14,16 @@ Repo: https://github.com/whyun-android/witv.git
 Binaries: https://github.com/whyun-android/witv/releases/download/v%v/witv_v%v.apk
 
 Builds:
-  - versionName: NEXT_VERSION_NAME
-    versionCode: NEXT_VERSION_CODE
-    commit: vNEXT_VERSION_NAME
+  - versionName: 1.6.0
+    versionCode: 9
+    commit: v1.6.0
     subdir: app
     gradle:
       - yes
 
-AllowedAPKSigningKeys: SIGNING_CERT_SHA256
+AllowedAPKSigningKeys: 74e3696c7f2ae32d0223c640380cb6cedaa4f8247285219b04d0169d4a3ed060
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: NEXT_VERSION_NAME
-CurrentVersionCode: NEXT_VERSION_CODE
+CurrentVersion: 1.6.0
+CurrentVersionCode: 9
