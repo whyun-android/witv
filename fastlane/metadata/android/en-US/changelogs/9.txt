@@ -1,0 +1,5 @@
+- New Standard / TV-broadcast themes; UI language switchable between Chinese and English
+- Channel menu redesigned as a three-column layout with number plates, a live badge and today's EPG
+- Fixed hardware-decoder hangs on Amlogic boxes: the app now rebuilds or restarts and resumes the same channel
+- Custom EPG URL coexists with the M3U one and survives M3U refreshes
+- Release builds now use R8; the APK shrank from 35 MB to 13.9 MB
